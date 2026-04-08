@@ -1,0 +1,58 @@
+arch:
+  # Ethos-U55-like AccelForge model:
+  #
+  # - FLASH is a slow upper memory for weights / inputs / outputs.
+  # - SRAM is the larger on-chip buffer that the NPU and host share or carve out.
+  # - Scratchpad is a small, fast local working buffer near compute.
+  # - MAC is an int8 MAC array with configurable width.
+  #
+  # Assumptions that are not public Ethos-U55 constants are passed in through Jinja.
+  nodes:
+  - !Memory
+    name: FLASH
+    size: inf
+    # Public Ethos-U55 systems use Flash as the slow upper memory
+    # We keep write enabled here only so generic workloads with final outputs remain legal
+    total_latency: "max(read_actions * {{ BITS_PER_VALUE }} / {{ FLASH_READ_BW_BITS_PER_S }}, write_actions * {{ BITS_PER_VALUE }} / {{ FLASH_WRITE_BW_BITS_PER_S }})"
+    leak_power: 0
+    area: 0
+    actions:
+    - {name: read, energy: {{ FLASH_READ_ENERGY_J }}, latency: 0}
+    - {name: write, energy: {{ FLASH_WRITE_ENERGY_J }}, latency: 0}
+    tensors: {keep: ~Intermediates, may_keep: All}
+
+  - !Memory
+    name: SRAM
+    size: {{ SYSTEM_SRAM_SIZE_BITS }}
+    # Public Vela presets expose SRAM bandwidths such as 1.6 GB/s and 4.0 GB/s.
+    total_latency: "max(read_actions * {{ BITS_PER_VALUE }} / {{ SRAM_READ_BW_BITS_PER_S }}, write_actions * {{ BITS_PER_VALUE }} / {{ SRAM_WRITE_BW_BITS_PER_S }})"
+    leak_power: 0
+    area: {{ SYSTEM_SRAM_AREA_M2 }}
+    actions:
+    - {name: read, energy: {{ SRAM_READ_ENERGY_J }}, latency: 0}
+    - {name: write, energy: {{ SRAM_WRITE_ENERGY_J }}, latency: 0}
+    tensors: {keep: All, may_keep: All}
+
+  - !Memory
+    name: Scratchpad
+    size: {{ LOCAL_BUFFER_SIZE_BITS }}
+    # This stands in for the NPU's hidden local working storage
+    # We intentionally give it high bandwidth so it does not become the bottleneck
+    # unless you choose to make it small enough that refetching dominates.
+    total_latency: "max(read_actions * {{ BITS_PER_VALUE }} / {{ SCRATCH_READ_BW_BITS_PER_S }}, write_actions * {{ BITS_PER_VALUE }} / {{ SCRATCH_WRITE_BW_BITS_PER_S }})"
+    leak_power: 0
+    area: {{ LOCAL_BUFFER_AREA_M2 }}
+    actions:
+    - {name: read, energy: {{ SCRATCH_READ_ENERGY_J }}, latency: 0}
+    - {name: write, energy: {{ SCRATCH_WRITE_ENERGY_J }}, latency: 0}
+    tensors: {keep: All, may_keep: All}
+
+  - !Compute
+    name: MAC
+    total_latency: "compute_actions / ({{ CLOCK_HZ }} * {{ NUM_MACS }})"
+    leak_power: 0
+    # Public Arm material gives only a total core-area anchor for the smallest
+    # U55, so we're folding fixed control area and MAC-array area into one compute block
+    area: {{ NPU_CORE_AREA_M2 }}
+    actions:
+    - {name: compute, energy: {{ MAC_ENERGY_J }}, latency: 0}
