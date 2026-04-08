@@ -11,8 +11,7 @@ arch:
   - !Memory
     name: FLASH
     size: inf
-    # Public Ethos-U55 systems use Flash as the slow upper memory
-    # We keep write enabled here only so generic workloads with final outputs remain legal
+    # Public Ethos-U55 systems use Flash as the slow upper memory which is fallback
     total_latency: "max(read_actions * {{ BITS_PER_VALUE }} / {{ FLASH_READ_BW_BITS_PER_S }}, write_actions * {{ BITS_PER_VALUE }} / {{ FLASH_WRITE_BW_BITS_PER_S }})"
     leak_power: 0
     area: 0
@@ -24,7 +23,7 @@ arch:
   - !Memory
     name: SRAM
     size: {{ SYSTEM_SRAM_SIZE_BITS }}
-    # Public Vela presets expose SRAM bandwidths such as 1.6 GB/s and 4.0 GB/s.
+    # Docs list SRAM bandwidths such as 1.6 GB/s and 4.0 GB/s
     total_latency: "max(read_actions * {{ BITS_PER_VALUE }} / {{ SRAM_READ_BW_BITS_PER_S }}, write_actions * {{ BITS_PER_VALUE }} / {{ SRAM_WRITE_BW_BITS_PER_S }})"
     leak_power: 0
     area: {{ SYSTEM_SRAM_AREA_M2 }}
@@ -36,9 +35,7 @@ arch:
   - !Memory
     name: Scratchpad
     size: {{ LOCAL_BUFFER_SIZE_BITS }}
-    # This stands in for the NPU's hidden local working storage
-    # We intentionally give it high bandwidth so it does not become the bottleneck
-    # unless you choose to make it small enough that refetching dominates.
+    # This stands in for the NPU's hidden local working storage (very high BW)
     total_latency: "max(read_actions * {{ BITS_PER_VALUE }} / {{ SCRATCH_READ_BW_BITS_PER_S }}, write_actions * {{ BITS_PER_VALUE }} / {{ SCRATCH_WRITE_BW_BITS_PER_S }})"
     leak_power: 0
     area: {{ LOCAL_BUFFER_AREA_M2 }}
