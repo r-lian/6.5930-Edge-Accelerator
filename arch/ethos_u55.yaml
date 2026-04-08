@@ -1,5 +1,5 @@
 arch:
-  # Ethos-U55-like AccelForge model:
+  # Ethos-U55 as an AccelForge model:
   #
   # - FLASH is a slow upper memory for weights / inputs / outputs.
   # - SRAM is the larger on-chip buffer that the NPU and host share or carve out.

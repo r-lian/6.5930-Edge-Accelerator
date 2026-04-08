@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 import accelforge as af
 
 
-ARCH_PATH = Path(__file__).parent / "arch" / "ethos_u55_like.yaml"
+ARCH_PATH = Path(__file__).parent / "arch" / "ethos_u55.yaml"
 
 # Public Arm Vela presets
 SYSTEM_PRESETS: Dict[str, Dict[str, float]] = {
@@ -68,7 +68,7 @@ DEFAULTS: Dict[str, Any] = {
     "u55_32_core_area_m2": 0.1e-6,
     "mac_area_m2": 9.0e-11,
     "sram_area_per_bit_m2": 2.5e-14,
-    # Give the local scratchpad effectively non-limiting bandwidth.
+    # Give the local scratchpad non-limiting (massive) bandwidth
     "scratch_read_bw_bytes_per_s": 1.0e12,
     "scratch_write_bw_bytes_per_s": 1.0e12,
 }
