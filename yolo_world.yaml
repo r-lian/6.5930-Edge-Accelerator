@@ -277,7 +277,7 @@ workload:
     - 0 <= s19 < 3
     renames: {output: T19, input: I19, weight: W19}
 
-  # T20: head 3x3 conv P4  40x40x256 -> 40x40x256
+  # T20: head 3x3 conv P4  40x40x256 -> 40x40x256d
   #   MACs = 40*40*256*256*3*3 = 943,718,400
   - einsum: "T20[p20, q20, n, m20] = I20[n, c20, H: p20 + r20, W: q20 + s20] * W20[r20, s20, c20, m20]"
     iteration_space_shape:
