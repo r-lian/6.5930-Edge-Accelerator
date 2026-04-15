@@ -1,8 +1,3 @@
-# @Time    : 2026-04-08 13:18
-# @Author  : Hector Astrom
-# @Email   : hastrom@mit.edu
-# @File    : load_ethos_u55.py
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,7 +6,7 @@ from typing import Any, Dict, Optional
 import accelforge as af
 
 
-ARCH_PATH = Path(__file__).parent / "arch" / "ethos_u55.yaml"
+ARCH_PATH = Path(__file__).parent.parent / "arch" / "ethos_u55.yaml"
 
 # Public Arm Vela presets
 SYSTEM_PRESETS: Dict[str, Dict[str, float]] = {

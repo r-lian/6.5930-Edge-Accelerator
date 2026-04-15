@@ -1,0 +1,419 @@
+nodes:
+  - tensors:
+      - Z
+      - B
+      - A
+    component: FLASH
+    component_object:
+        name: FLASH
+        spatial: []
+        component_class: null
+        component_model: null
+        component_modeling_log:
+          - Calculating energy for FLASH action read.
+          - Setting FLASH energy to action.energy=1.5e-11
+          - Calculating energy for FLASH action write.
+          - Setting FLASH energy to action.energy=2e-11
+          - Calculating latency for FLASH action read.
+          - Setting FLASH latency to action.latency=0
+          - Calculating latency for FLASH action write.
+          - Setting FLASH latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+          - Calculating energy for FLASH action read.
+          - Setting FLASH energy to action.energy=1.5e-11
+          - Calculating energy for FLASH action write.
+          - Setting FLASH energy to action.energy=2e-11
+          - Calculating latency for FLASH action read.
+          - Setting FLASH latency to action.latency=0
+          - Calculating latency for FLASH action write.
+          - Setting FLASH latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+        actions:
+          - name: read
+            energy: 1.5e-11
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+          - name: write
+            energy: 2e-11
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+        enabled: true
+        area: 0
+        total_area: null
+        area_scale: 1
+        leak_power: 0
+        total_leak_power: 0
+        leak_power_scale: 1
+        energy_scale: 1
+        total_latency: max(read_actions * 8 / 4000000000.0, write_actions * 8 / 
+            4000000000.0)
+        latency_scale: 1
+        n_parallel_instances: 1
+        extra_attributes_for_component_model: {}
+    persistent: false
+  - tensors:
+      - B
+    component: SRAM
+    component_object:
+        name: SRAM
+        spatial: []
+        component_class: null
+        component_model: null
+        component_modeling_log:
+          - Calculating energy for SRAM action read.
+          - Setting SRAM energy to action.energy=1.88e-12
+          - Calculating energy for SRAM action write.
+          - Setting SRAM energy to action.energy=2.36e-12
+          - Calculating latency for SRAM action read.
+          - Setting SRAM latency to action.latency=0
+          - Calculating latency for SRAM action write.
+          - Setting SRAM latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+          - Calculating energy for SRAM action read.
+          - Setting SRAM energy to action.energy=1.88e-12
+          - Calculating energy for SRAM action write.
+          - Setting SRAM energy to action.energy=2.36e-12
+          - Calculating latency for SRAM action read.
+          - Setting SRAM latency to action.latency=0
+          - Calculating latency for SRAM action write.
+          - Setting SRAM latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+        actions:
+          - name: read
+            energy: 1.88e-12
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+          - name: write
+            energy: 2.36e-12
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+        enabled: true
+        area: 7.864320000000001e-08
+        total_area: null
+        area_scale: 1
+        leak_power: 0
+        total_leak_power: 0
+        leak_power_scale: 1
+        energy_scale: 1
+        total_latency: max(read_actions * 8 / 32000000000.0, write_actions * 8 /
+            32000000000.0)
+        latency_scale: 1
+        n_parallel_instances: 1
+        extra_attributes_for_component_model: {}
+    persistent: false
+  - purposes:
+      - Z
+      - B
+      - A
+    resource: FLASH
+    persistent: false
+  - purposes:
+      - B
+    resource: SRAM
+    persistent: false
+  - rank_variable: m
+    tile_shape: 128
+    initial_tile_shape: null
+  - tensors:
+      - Z
+      - A
+    component: SRAM
+    component_object:
+        name: SRAM
+        spatial: []
+        component_class: null
+        component_model: null
+        component_modeling_log:
+          - Calculating energy for SRAM action read.
+          - Setting SRAM energy to action.energy=1.88e-12
+          - Calculating energy for SRAM action write.
+          - Setting SRAM energy to action.energy=2.36e-12
+          - Calculating latency for SRAM action read.
+          - Setting SRAM latency to action.latency=0
+          - Calculating latency for SRAM action write.
+          - Setting SRAM latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+          - Calculating energy for SRAM action read.
+          - Setting SRAM energy to action.energy=1.88e-12
+          - Calculating energy for SRAM action write.
+          - Setting SRAM energy to action.energy=2.36e-12
+          - Calculating latency for SRAM action read.
+          - Setting SRAM latency to action.latency=0
+          - Calculating latency for SRAM action write.
+          - Setting SRAM latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+        actions:
+          - name: read
+            energy: 1.88e-12
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+          - name: write
+            energy: 2.36e-12
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+        enabled: true
+        area: 7.864320000000001e-08
+        total_area: null
+        area_scale: 1
+        leak_power: 0
+        total_leak_power: 0
+        leak_power_scale: 1
+        energy_scale: 1
+        total_latency: max(read_actions * 8 / 32000000000.0, write_actions * 8 /
+            32000000000.0)
+        latency_scale: 1
+        n_parallel_instances: 1
+        extra_attributes_for_component_model: {}
+    persistent: false
+  - purposes:
+      - Z
+      - A
+    resource: SRAM
+    persistent: false
+  - rank_variable: n
+    tile_shape: 128
+    initial_tile_shape: null
+  - tensors:
+      - Z
+    component: Scratchpad
+    component_object:
+        name: Scratchpad
+        spatial: []
+        component_class: null
+        component_model: null
+        component_modeling_log:
+          - Calculating energy for Scratchpad action read.
+          - Setting Scratchpad energy to action.energy=5e-13
+          - Calculating energy for Scratchpad action write.
+          - Setting Scratchpad energy to action.energy=6e-13
+          - Calculating latency for Scratchpad action read.
+          - Setting Scratchpad latency to action.latency=0
+          - Calculating latency for Scratchpad action write.
+          - Setting Scratchpad latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+          - Calculating energy for Scratchpad action read.
+          - Setting Scratchpad energy to action.energy=5e-13
+          - Calculating energy for Scratchpad action write.
+          - Setting Scratchpad energy to action.energy=6e-13
+          - Calculating latency for Scratchpad action read.
+          - Setting Scratchpad latency to action.latency=0
+          - Calculating latency for Scratchpad action write.
+          - Setting Scratchpad latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+        actions:
+          - name: read
+            energy: 5e-13
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+          - name: write
+            energy: 6e-13
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+        enabled: true
+        area: 6.5536e-09
+        total_area: null
+        area_scale: 1
+        leak_power: 0
+        total_leak_power: 0
+        leak_power_scale: 1
+        energy_scale: 1
+        total_latency: max(read_actions * 8 / 8000000000000.0, write_actions * 8
+            / 8000000000000.0)
+        latency_scale: 1
+        n_parallel_instances: 1
+        extra_attributes_for_component_model: {}
+    persistent: false
+  - purposes:
+      - Z
+    resource: Scratchpad
+    persistent: false
+  - rank_variable: k
+    tile_shape: 1
+    initial_tile_shape: null
+  - tensors:
+      - A
+    component: Scratchpad
+    component_object:
+        name: Scratchpad
+        spatial: []
+        component_class: null
+        component_model: null
+        component_modeling_log:
+          - Calculating energy for Scratchpad action read.
+          - Setting Scratchpad energy to action.energy=5e-13
+          - Calculating energy for Scratchpad action write.
+          - Setting Scratchpad energy to action.energy=6e-13
+          - Calculating latency for Scratchpad action read.
+          - Setting Scratchpad latency to action.latency=0
+          - Calculating latency for Scratchpad action write.
+          - Setting Scratchpad latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+          - Calculating energy for Scratchpad action read.
+          - Setting Scratchpad energy to action.energy=5e-13
+          - Calculating energy for Scratchpad action write.
+          - Setting Scratchpad energy to action.energy=6e-13
+          - Calculating latency for Scratchpad action read.
+          - Setting Scratchpad latency to action.latency=0
+          - Calculating latency for Scratchpad action write.
+          - Setting Scratchpad latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+        actions:
+          - name: read
+            energy: 5e-13
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+          - name: write
+            energy: 6e-13
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+        enabled: true
+        area: 6.5536e-09
+        total_area: null
+        area_scale: 1
+        leak_power: 0
+        total_leak_power: 0
+        leak_power_scale: 1
+        energy_scale: 1
+        total_latency: max(read_actions * 8 / 8000000000000.0, write_actions * 8
+            / 8000000000000.0)
+        latency_scale: 1
+        n_parallel_instances: 1
+        extra_attributes_for_component_model: {}
+    persistent: false
+  - purposes:
+      - A
+    resource: Scratchpad
+    persistent: false
+  - rank_variable: n
+    tile_shape: 1
+    initial_tile_shape: null
+  - tensors:
+      - B
+    component: Scratchpad
+    component_object:
+        name: Scratchpad
+        spatial: []
+        component_class: null
+        component_model: null
+        component_modeling_log:
+          - Calculating energy for Scratchpad action read.
+          - Setting Scratchpad energy to action.energy=5e-13
+          - Calculating energy for Scratchpad action write.
+          - Setting Scratchpad energy to action.energy=6e-13
+          - Calculating latency for Scratchpad action read.
+          - Setting Scratchpad latency to action.latency=0
+          - Calculating latency for Scratchpad action write.
+          - Setting Scratchpad latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+          - Calculating energy for Scratchpad action read.
+          - Setting Scratchpad energy to action.energy=5e-13
+          - Calculating energy for Scratchpad action write.
+          - Setting Scratchpad energy to action.energy=6e-13
+          - Calculating latency for Scratchpad action read.
+          - Setting Scratchpad latency to action.latency=0
+          - Calculating latency for Scratchpad action write.
+          - Setting Scratchpad latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+        actions:
+          - name: read
+            energy: 5e-13
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+          - name: write
+            energy: 6e-13
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+            bits_per_action: 1
+        enabled: true
+        area: 6.5536e-09
+        total_area: null
+        area_scale: 1
+        leak_power: 0
+        total_leak_power: 0
+        leak_power_scale: 1
+        energy_scale: 1
+        total_latency: max(read_actions * 8 / 8000000000000.0, write_actions * 8
+            / 8000000000000.0)
+        latency_scale: 1
+        n_parallel_instances: 1
+        extra_attributes_for_component_model: {}
+    persistent: false
+  - purposes:
+      - B
+    resource: Scratchpad
+    persistent: false
+  - rank_variable: m
+    tile_shape: 1
+    initial_tile_shape: null
+  - einsum: EinsumZ
+    component: MAC
+    component_object:
+        name: MAC
+        spatial: []
+        component_class: null
+        component_model: null
+        component_modeling_log:
+          - Calculating energy for MAC action compute.
+          - Setting MAC energy to action.energy=8.4e-14
+          - Calculating latency for MAC action compute.
+          - Setting MAC latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+          - Calculating energy for MAC action compute.
+          - Setting MAC energy to action.energy=8.4e-14
+          - Calculating latency for MAC action compute.
+          - Setting MAC latency to action.latency=0
+          - Using predefined leak power value self.leak_power=0
+        actions:
+          - name: compute
+            energy: 8.4e-14
+            energy_scale: 1
+            latency: 0
+            latency_scale: 1
+            extra_attributes_for_component_model: {}
+        enabled: true
+        area: 1.0864e-07
+        total_area: null
+        area_scale: 1
+        leak_power: 0
+        total_leak_power: 0
+        leak_power_scale: 1
+        energy_scale: 1
+        total_latency: compute_actions / (1000000000.0 * 128)
+        latency_scale: 1
+        n_parallel_instances: 1
+        extra_attributes_for_component_model: {}
