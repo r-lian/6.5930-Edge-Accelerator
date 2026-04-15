@@ -495,57 +495,90 @@ def experiment_budget_sensitivity():
             print(f"  → Best within budget: {best.label}  EDP={best.total_edp:.3e}  area={best.area_mm2:.3f} mm²")
 
 
-def experiment_workload_comparison():
-    """
-    Q4: Compare 640px vs 320px YOLO-World-S on the baseline architecture.
-    Shows energy, latency, and pJ/MAC for each layer, and total model speedup.
-    """
-    print("=" * 100)
-    print("EXPERIMENT 3 — Workload co-design: 640px vs 320px input resolution")
-    print("  Architecture: 128 MACs / 384 KB SRAM / high_end_embedded (baseline)")
-    print("=" * 100)
-
-    generate_320px_workload()
-
-    nmacs, sram, scratch, preset = 128, 384, 32, "high_end_embedded"
-    layers_to_map = PROBE_LAYERS  # use same probe layers for fair comparison
-
-    print("\n  Mapping 640px workload ...")
-    r640 = _map_config(WORKLOAD_640, layers_to_map, nmacs, sram, scratch, preset, "640px")
-
-    print("\n  Mapping 320px workload ...")
-    r320 = _map_config(WORKLOAD_320, layers_to_map, nmacs, sram, scratch, preset, "320px")
-
-    # Print comparison table
+def _print_workload_comparison(
+    r640: ArchResult,
+    r320: ArchResult,
+    layers_to_map: list[int],
+):
+    """Print per-layer 640px vs 320px comparison table with latency and energy."""
     print("\n  Per-layer comparison (640px vs 320px):")
-    hdr = f"  {'Layer':<38} {'MACs-640':>10} {'MACs-320':>10} {'E-640(J)':>11} {'E-320(J)':>11} {'speedup':>8}"
+    hdr = (f"  {'Layer':<38} {'MACs-640':>10} {'MACs-320':>10}"
+           f" {'Lat-640(s)':>11} {'Lat-320(s)':>11} {'lat-spdup':>9}"
+           f" {'E-640(J)':>11} {'E-320(J)':>11} {'e-spdup':>8}")
     print(hdr)
     print("  " + "-" * (len(hdr) - 2))
 
     for li in layers_to_map:
-        name = LAYER_NAMES[li] if li < len(LAYER_NAMES) else f"T{li}"
+        name  = LAYER_NAMES[li] if li < len(LAYER_NAMES) else f"T{li}"
         lr640 = next((x for x in r640.layer_results if x.layer_idx == li), None)
         lr320 = next((x for x in r320.layer_results if x.layer_idx == li), None)
         m640  = EXPECTED_MACS_640[li] if li < len(EXPECTED_MACS_640) else 0
         m320  = EXPECTED_MACS_320[li] if li < len(EXPECTED_MACS_320) else 0
-        e640  = f"{lr640.energy_j:.3e}" if lr640 else "  —"
-        e320  = f"{lr320.energy_j:.3e}" if lr320 else "  —"
-        sp    = f"{lr640.energy_j / lr320.energy_j:.2f}x" if (lr640 and lr320) else "  —"
-        print(f"  {name:<38} {m640:>10,} {m320:>10,} {e640:>11} {e320:>11} {sp:>8}")
+        l640  = f"{lr640.latency_s:.3e}"  if lr640 else "  —"
+        l320  = f"{lr320.latency_s:.3e}"  if lr320 else "  —"
+        lsp   = f"{lr640.latency_s / lr320.latency_s:.2f}x" if (lr640 and lr320) else "  —"
+        e640  = f"{lr640.energy_j:.3e}"   if lr640 else "  —"
+        e320  = f"{lr320.energy_j:.3e}"   if lr320 else "  —"
+        esp   = f"{lr640.energy_j / lr320.energy_j:.2f}x" if (lr640 and lr320) else "  —"
+        print(f"  {name:<38} {m640:>10,} {m320:>10,}"
+              f" {l640:>11} {l320:>11} {lsp:>9}"
+              f" {e640:>11} {e320:>11} {esp:>8}")
 
     total_e640 = r640.total_energy_j
     total_e320 = r320.total_energy_j
     total_l640 = r640.total_latency_s
     total_l320 = r320.total_latency_s
-
-    print(f"\n  {'TOTAL (probe layers)':<38} {'':>10} {'':>10} "
-          f"{total_e640:>11.3e} {total_e320:>11.3e} "
-          f"{total_e640/total_e320:>7.2f}x")
-    print(f"\n  Energy reduction (probe layers): {100*(1 - total_e320/total_e640):.1f}%")
-    print(f"  Latency reduction (probe layers): {100*(1 - total_l320/total_l640):.1f}%")
-    print(f"\n  Note: text encoder layers (T13-T17) are unchanged between 640px and 320px.")
+    print("  " + "-" * (len(hdr) - 2))
+    print(f"  {'TOTAL (probe layers)':<38} {'':>10} {'':>10}"
+          f" {total_l640:>11.3e} {total_l320:>11.3e}"
+          f" {total_l640/total_l320:>8.2f}x"
+          f" {total_e640:>11.3e} {total_e320:>11.3e}"
+          f" {total_e640/total_e320:>7.2f}x")
+    print(f"\n  Latency reduction: {100*(1 - total_l320/total_l640):.1f}%"
+          f"   Energy reduction: {100*(1 - total_e320/total_e640):.1f}%")
+    print(f"  Note: text encoder layers (T13-T17) are unchanged between resolutions.")
     print(f"  As spatial layers shrink, the text encoder becomes a larger fraction of total cost.")
     print()
+
+
+# Representative hardware configs for workload comparison across budget tiers.
+# Tight = smallest feasible config; Baseline = Ethos-U55/128; Relaxed = largest config.
+WORKLOAD_COMPARISON_CONFIGS = [
+    # (label,              nmacs, sram_kb, scratch_kb, preset)
+    ("Tight   32M/256KB",     32,     256,         16, "deep_embedded"),
+    ("Baseline 128M/384KB",  128,     384,         32, "high_end_embedded"),
+    ("Relaxed 256M/512KB",   256,     512,        128, "high_end_embedded"),
+]
+
+
+def experiment_workload_comparison():
+    """
+    Q4: Compare 640px vs 320px YOLO-World-S across tight / baseline / relaxed
+    hardware configs. Shows how much workload resolution reduction helps when
+    hardware is most and least constrained.
+    """
+    print("=" * 100)
+    print("EXPERIMENT 3 — Workload co-design: 640px vs 320px input resolution")
+    print("  Runs on tight / baseline / relaxed hardware configs (Goal: most + least permissive)")
+    print("=" * 100)
+
+    generate_320px_workload()
+    layers_to_map = PROBE_LAYERS
+
+    for label, nmacs, sram, scratch, preset in WORKLOAD_COMPARISON_CONFIGS:
+        area = compute_area_mm2(nmacs, sram, scratch)
+        print(f"\n{'─'*100}")
+        print(f"  Config: {label}  ({nmacs} MACs / {sram} KB SRAM / {scratch} KB scratch"
+              f" / {preset})  area={area:.3f} mm²")
+        print(f"{'─'*100}")
+
+        print("\n  Mapping 640px workload ...")
+        r640 = _map_config(WORKLOAD_640, layers_to_map, nmacs, sram, scratch, preset, f"{label} 640px")
+
+        print("\n  Mapping 320px workload ...")
+        r320 = _map_config(WORKLOAD_320, layers_to_map, nmacs, sram, scratch, preset, f"{label} 320px")
+
+        _print_workload_comparison(r640, r320, layers_to_map)
 
 
 def experiment_full_model(workload_yaml: str = WORKLOAD_640):
@@ -601,7 +634,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--workload", action="store_true",
-        help="Compare 640px vs 320px YOLO-World on baseline arch"
+        help="Compare 640px vs 320px YOLO-World on tight / baseline / relaxed arch configs"
     )
     parser.add_argument(
         "--full", action="store_true",
