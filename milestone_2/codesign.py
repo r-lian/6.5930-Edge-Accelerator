@@ -20,7 +20,7 @@ Run from the repo root inside Docker:
     then...
 
     python3 -m milestone_2.codesign --help
-    python3 -m milestone_2.codesign --probe          # fast: map one representative layer
+    python3 -m milestone_2.codesign --probe          # fast: map 5 representative probe layers (~2h)
     python3 -m milestone_2.codesign --full             # slow: map all 21 layers per config
     python3 -m milestone_2.codesign --workload        # compare 640px vs 320px YOLO-World
     python3 -m milestone_2.codesign --budget          # re-run sweep at tight / loose budgets
@@ -32,11 +32,13 @@ Typical workflow: start with --probe to get results in ~30 min, then use
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import sys
 import tempfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -53,6 +55,43 @@ from milestone_1.load_ethos_u55 import (
     DEFAULTS,
     MEMORY_MODES,
 )
+
+# ── Mapping cache ─────────────────────────────────────────────────────────────
+# Persists layer mapping results to disk so reruns skip already-computed layers.
+
+_CACHE_FILE = _REPO_ROOT / "milestone_2" / "mapping_cache.json"
+_RESULTS_DIR = _REPO_ROOT / "milestone_2" / "results"
+
+_cache: dict[str, dict] = {}
+
+
+def _cache_key(workload_yaml: str, layer_idx: int, num_macs: int,
+               sram_kb: int, scratch_kb: int, system_preset: str) -> str:
+    return f"{Path(workload_yaml).name}:T{layer_idx}:{num_macs}macs:{sram_kb}kb:{scratch_kb}scratch:{system_preset}"
+
+
+def _load_cache() -> None:
+    global _cache
+    if _CACHE_FILE.exists():
+        _cache = json.loads(_CACHE_FILE.read_text())
+        print(f"[cache] Loaded {len(_cache)} cached mappings from {_CACHE_FILE.name}")
+    else:
+        _cache = {}
+
+
+def _write_cache() -> None:
+    _CACHE_FILE.write_text(json.dumps(_cache, indent=2))
+
+
+def save_results(tag: str, data: object) -> Path:
+    """Serialize experiment results to milestone_2/results/<tag>_<timestamp>.json."""
+    _RESULTS_DIR.mkdir(exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out = _RESULTS_DIR / f"{tag}_{ts}.json"
+    out.write_text(json.dumps(data, indent=2))
+    print(f"[results] Saved to {out}")
+    return out
+
 
 # ── Workload files ────────────────────────────────────────────────────────────
 
@@ -176,7 +215,12 @@ def _map_layer(
     scratch_kb: int,
     system_preset: str,
 ) -> LayerResult:
-    """Extract a single einsum and map it. Returns LayerResult."""
+    """Extract a single einsum and map it. Returns LayerResult. Caches results to disk."""
+    key = _cache_key(workload_yaml, layer_idx, num_macs, sram_kb, scratch_kb, system_preset)
+    if key in _cache:
+        c = _cache[key]
+        return LayerResult(layer_idx=layer_idx, energy_j=c["energy_j"], latency_s=c["latency_s"])
+
     raw = Path(workload_yaml).read_text().replace("{{BATCH_SIZE}}", "1")
     doc = yaml.safe_load(raw)
     einsums = doc["workload"]["einsums"]
@@ -212,11 +256,14 @@ def _map_layer(
         spec.mapper.metrics = Metrics.LATENCY | Metrics.ENERGY
         mappings = spec.map_workload_to_arch()
         row = mappings.data.iloc[0]
-        return LayerResult(
+        result = LayerResult(
             layer_idx=layer_idx,
             energy_j=float(row["Total<SEP>energy"]),
             latency_s=float(row["Total<SEP>latency"]),
         )
+        _cache[key] = {"energy_j": result.energy_j, "latency_s": result.latency_s}
+        _write_cache()
+        return result
     finally:
         os.unlink(tmp)
 
@@ -248,6 +295,27 @@ def _map_config(
         except Exception as exc:
             print(f"FAILED: {exc}")
     return result
+
+
+# ── Serialization helpers ─────────────────────────────────────────────────────
+
+def _arch_result_to_dict(r: ArchResult) -> dict:
+    return {
+        "label": r.label,
+        "num_macs": r.num_macs,
+        "sram_kb": r.sram_kb,
+        "scratch_kb": r.scratch_kb,
+        "system_preset": r.system_preset,
+        "area_mm2": r.area_mm2,
+        "total_energy_j": r.total_energy_j,
+        "total_latency_s": r.total_latency_s,
+        "total_edp": r.total_edp,
+        "layers": [
+            {"layer_idx": lr.layer_idx, "energy_j": lr.energy_j,
+             "latency_s": lr.latency_s, "edp": lr.edp}
+            for lr in r.layer_results
+        ],
+    }
 
 
 # ── Print helpers ─────────────────────────────────────────────────────────────
@@ -473,6 +541,9 @@ def experiment_probe_sweep(budget_mm2: Optional[float] = None):
     print("\n--- PROBE LAYER SWEEP RESULTS ---")
     _print_sweep_table(all_results, budget_mm2)
     _print_layer_breakdown(all_results, LAYER_NAMES)
+
+    if not budget_mm2:  # don't double-save when called from experiment_budget_sensitivity
+        save_results("probe_sweep", [_arch_result_to_dict(r) for r in all_results])
     return all_results
 
 
@@ -486,6 +557,7 @@ def experiment_budget_sensitivity():
     print("  How does the optimal config change as area budget tightens / relaxes?")
     print("=" * 100)
 
+    all_budget_results = {}
     for name, bdef in BUDGETS.items():
         budget = bdef["area_mm2"]
         print(f"\n  ── Budget tier: {bdef['label']} ──")
@@ -493,6 +565,12 @@ def experiment_budget_sensitivity():
         if results:
             best = min(results, key=lambda r: r.total_edp)
             print(f"  → Best within budget: {best.label}  EDP={best.total_edp:.3e}  area={best.area_mm2:.3f} mm²")
+            all_budget_results[name] = {
+                "budget_mm2": budget,
+                "best": _arch_result_to_dict(best),
+                "all": [_arch_result_to_dict(r) for r in results],
+            }
+    save_results("budget_sensitivity", all_budget_results)
 
 
 def _print_workload_comparison(
@@ -579,6 +657,12 @@ def experiment_workload_comparison():
         r320 = _map_config(WORKLOAD_320, layers_to_map, nmacs, sram, scratch, preset, f"{label} 320px")
 
         _print_workload_comparison(r640, r320, layers_to_map)
+        save_results(f"workload_{label.split()[0].lower()}", {
+            "hw_config": {"label": label, "num_macs": nmacs, "sram_kb": sram,
+                          "scratch_kb": scratch, "system_preset": preset, "area_mm2": area},
+            "r640": _arch_result_to_dict(r640),
+            "r320": _arch_result_to_dict(r320),
+        })
 
 
 def experiment_full_model(workload_yaml: str = WORKLOAD_640):
@@ -616,6 +700,7 @@ def experiment_full_model(workload_yaml: str = WORKLOAD_640):
     avg_pj = total_e / total_m * 1e12 if total_m else float("nan")
     print(f"  {'TOTAL':<49} {total_m:>12,} {total_e:>11.3e} {'':>11} {avg_pj:>8.2f}")
     print()
+    save_results(f"full_model_{wname}", _arch_result_to_dict(r))
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -648,6 +733,8 @@ if __name__ == "__main__":
 
     if not any(vars(args).values()):
         parser.print_help()
+
+    _load_cache()
     if args.probe:
         experiment_probe_sweep()
     if args.budget:
