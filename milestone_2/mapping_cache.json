@@ -22,5 +22,100 @@
     "energy_j": 0.0164,
     "latency_s": 0.128,
     "edp": 0.0020992
+  },
+  "yolo_world.yaml:T1:32macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.002318199025467038,
+    "latency_s": 0.26214399933815,
+    "edp": 0.0006077019637977313
+  },
+  "yolo_world.yaml:T7:32macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.008450793102383614,
+    "latency_s": 0.16155648231506348,
+    "edp": 0.0013652804063934987
+  },
+  "yolo_world.yaml:T10:32macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.008410453796386719,
+    "latency_s": 0.14518271386623383,
+    "edp": 0.001221052507005993
+  },
+  "yolo_world.yaml:T16:32macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.0015690717846155167,
+    "latency_s": 0.0870399996638298,
+    "edp": 0.0001365720076054594
+  },
+  "yolo_world.yaml:T1:64macs:384kb:32scratch:high_end_embedded": {
+    "energy_j": 0.002318199025467038,
+    "latency_s": 0.052428800612688065,
+    "edp": 0.00012154039448673912
+  },
+  "yolo_world.yaml:T7:64macs:384kb:32scratch:high_end_embedded": {
+    "energy_j": 0.008450793102383614,
+    "latency_s": 0.032311294227838516,
+    "edp": 0.0002730560623897052
+  },
+  "yolo_world.yaml:T10:64macs:384kb:32scratch:high_end_embedded": {
+    "energy_j": 0.00841005053371191,
+    "latency_s": 0.029036544263362885,
+    "edp": 0.00024419880457924453
+  },
+  "yolo_world.yaml:T16:64macs:384kb:32scratch:high_end_embedded": {
+    "energy_j": 0.0015690717846155167,
+    "latency_s": 0.01740800030529499,
+    "edp": 2.731440210561667e-05
+  },
+  "yolo_world.yaml:T19:64macs:384kb:32scratch:high_end_embedded": {
+    "energy_j": 0.016403626650571823,
+    "latency_s": 0.02320793643593788,
+    "edp": 0.0003806943246253275
+  },
+  "yolo_world.yaml:T1:64macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.002318199025467038,
+    "latency_s": 0.26214399933815,
+    "edp": 0.0006077019637977313
+  },
+  "yolo_world.yaml:T7:64macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.008450793102383614,
+    "latency_s": 0.16155648231506348,
+    "edp": 0.0013652804063934987
+  },
+  "yolo_world.yaml:T10:64macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.008410453796386719,
+    "latency_s": 0.14518271386623383,
+    "edp": 0.001221052507005993
+  },
+  "yolo_world.yaml:T16:64macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.0015690717846155167,
+    "latency_s": 0.0870399996638298,
+    "edp": 0.0001365720076054594
+  },
+  "yolo_world.yaml:T19:64macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.016403626650571823,
+    "latency_s": 0.11603967845439911,
+    "edp": 0.0019034715620183662
+  },
+  "yolo_world.yaml:T1:64macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.0023203787859529257,
+    "latency_s": 0.26214399933815,
+    "edp": 0.0006082733749291011
+  },
+  "yolo_world.yaml:T7:64macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.008531599305570126,
+    "latency_s": 0.16155648231506348,
+    "edp": 0.0013783351723295478
+  },
+  "yolo_world.yaml:T10:64macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.008501030504703522,
+    "latency_s": 0.14518271386623383,
+    "edp": 0.0012342026793324967
+  },
+  "yolo_world.yaml:T16:64macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.0015751272439956665,
+    "latency_s": 0.0870399996638298,
+    "edp": 0.00013709907478787198
+  },
+  "yolo_world.yaml:T19:64macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.01653873547911644,
+    "latency_s": 0.12783615291118622,
+    "edp": 0.00211424831766599
   }
 }
