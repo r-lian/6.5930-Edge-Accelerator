@@ -181,6 +181,7 @@ def map_single_layer(layer_idx: int, **arch_overrides) -> LayerResult:
             **overrides,
         )
         spec.mapper.metrics = Metrics.LATENCY | Metrics.ENERGY
+        spec.mapper.max_pmapping_templates_per_einsum = 256
         mappings = spec.map_workload_to_arch()
 
         # Column names use "<SEP>" as separator (e.g. "Total<SEP>energy").

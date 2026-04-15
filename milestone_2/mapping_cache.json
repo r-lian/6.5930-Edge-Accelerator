@@ -1,0 +1,6 @@
+{
+  "yolo_world.yaml:T1:32macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.0023184609599411488,
+    "latency_s": 0.26214399933815
+  }
+}

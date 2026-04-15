@@ -42,7 +42,10 @@ arch:
     actions:
     - {name: read, energy: {{ SCRATCH_READ_ENERGY_J }}, latency: 0}
     - {name: write, energy: {{ SCRATCH_WRITE_ENERGY_J }}, latency: 0}
-    tensors: {keep: All, may_keep: All}
+    # Weights are too large for scratchpad; restricting to Intermediates (partial
+    # sums, activations) reduces tensor placement combinations and cuts pmapping
+    # template count significantly.
+    tensors: {keep: All, may_keep: Intermediates}
 
   - !Compute
     name: MAC

@@ -254,6 +254,7 @@ def _map_layer(
             system_preset=system_preset,
         )
         spec.mapper.metrics = Metrics.LATENCY | Metrics.ENERGY
+        spec.mapper.max_pmapping_templates_per_einsum = 256
         mappings = spec.map_workload_to_arch()
         row = mappings.data.iloc[0]
         result = LayerResult(
