@@ -2,20 +2,21 @@
 mapper_script.py  —  Map YOLO-World-S layers onto the Ethos-U55-like architecture.
 
 Run from the repo root (/home/workspace inside Docker):
-    python mapper_script.py                     # sanity check + full model (T0–T20)
-    python mapper_script.py --sanity            # T0 only (18,432 MACs)
-    python mapper_script.py --layer 7           # single layer by index
-    python mapper_script.py --max-layers 13     # backbone only (T0–T12)
-    python mapper_script.py --sweep             # vary NUM_MACs + SRAM, compare EDP
+    python -m milestone_1.mapper_script                     # sanity check + full model (T0–T20)
+    python -m milestone_1.mapper_script --sanity            # T0 only (18,432 MACs)
+    python -m milestone_1.mapper_script --layer 7           # single layer by index
+    python -m milestone_1.mapper_script --max-layers 13     # backbone only (T0–T12)
+    python -m milestone_1.mapper_script --sweep             # vary NUM_MACs + SRAM, compare EDP
 
 Import from a notebook:
-    from mapper_script import map_single_layer, run_sanity_check, run_workload
+    from milestone_1.mapper_script import map_single_layer, run_sanity_check, run_workload
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,12 +24,15 @@ from pathlib import Path
 import yaml
 from accelforge.mapper import Metrics
 
-from load_ethos_u55 import load_ethos_u55_spec
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from milestone_1.load_ethos_u55 import load_ethos_u55_spec
 
 # ── Workload ──────────────────────────────────────────────────────────────────
 
-# yolo_world.yaml lives at the repo root (= /home/workspace inside Docker).
-WORKLOAD_YAML = "yolo_world.yaml"
+WORKLOAD_YAML = str(_REPO_ROOT / "workload" / "yolo_world.yaml")
 
 # BATCH_SIZE is the only Jinja variable in yolo_world.yaml.
 WORKLOAD_JINJA = {"BATCH_SIZE": 1}

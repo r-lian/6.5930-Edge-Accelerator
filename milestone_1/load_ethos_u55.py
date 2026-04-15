@@ -11,7 +11,8 @@ from typing import Any, Dict, Optional
 import accelforge as af
 
 
-ARCH_PATH = Path(__file__).parent / "arch" / "ethos_u55.yaml"
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+ARCH_PATH = _REPO_ROOT / "arch" / "ethos_u55.yaml"
 
 # Public Arm Vela presets
 SYSTEM_PRESETS: Dict[str, Dict[str, float]] = {

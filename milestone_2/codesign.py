@@ -14,12 +14,16 @@ Answers the four milestone questions:
   Q4. How does changing the workload (lower resolution) improve efficiency?
 
 Run from the repo root inside Docker:
+    docker compose up -d
+    docker compose exec labs bash
+    
+    then...
 
-    python3 codesign.py --help
-    python3 codesign.py --probe          # fast: map one representative layer
-    python3 codesign.py --full           # slow: map all 21 layers per config
-    python3 codesign.py --workload       # compare 640px vs 320px YOLO-World
-    python3 codesign.py --budget         # re-run sweep at tight / loose budgets
+    python3 -m milestone_2.codesign --help
+    python3 -m milestone_2.codesign --probe          # fast: map one representative layer
+    python3 -m milestone_2.codesign --full             # slow: map all 21 layers per config
+    python3 -m milestone_2.codesign --workload        # compare 640px vs 320px YOLO-World
+    python3 -m milestone_2.codesign --budget          # re-run sweep at tight / loose budgets
 
 Typical workflow: start with --probe to get results in ~30 min, then use
 --full overnight if you want whole-model numbers.
@@ -30,6 +34,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,7 +43,11 @@ from typing import Optional
 import yaml
 from accelforge.mapper import Metrics
 
-from load_ethos_u55 import (
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from milestone_1.load_ethos_u55 import (
     build_ethos_u55_jinja_data,
     load_ethos_u55_spec,
     DEFAULTS,
@@ -47,8 +56,8 @@ from load_ethos_u55 import (
 
 # ── Workload files ────────────────────────────────────────────────────────────
 
-WORKLOAD_640 = "yolo_world.yaml"          # 640×640 input (standard)
-WORKLOAD_320 = "yolo_world_320.yaml"      # 320×320 input (edge-optimised variant)
+WORKLOAD_640 = str(_REPO_ROOT / "workload" / "yolo_world.yaml")
+WORKLOAD_320 = str(_REPO_ROOT / "workload" / "yolo_world_320.yaml")
 WORKLOAD_JINJA = {"BATCH_SIZE": 1}
 
 # Layer indices used as "probe" layers — one representative from each part of

@@ -1,8 +1,8 @@
 """
 Mapper script for YOLO-World-S on your AccelForge accelerator.
 
-Usage (from the lab_5/ directory):
-    python run_yolo_world.py
+Usage (from the repo root):
+    python -m milestone_1.run_yolo_world
 
 Workflow:
   1. Set ARCH_NAME to your partner's architecture name (filename without .yaml).
@@ -13,9 +13,10 @@ Workflow:
 import os
 import sys
 
-# Ensure lab_5/ is on the path so scripts/utils.py is importable.
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, THIS_DIR)
+# repo root on path so scripts/utils.py (partner lab layout) is importable
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, ".."))
+sys.path.insert(0, _REPO_ROOT)
 
 from scripts.utils import run_dnn_layers
 
