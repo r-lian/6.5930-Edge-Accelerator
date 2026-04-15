@@ -25,8 +25,15 @@ Run from the repo root inside Docker:
     python3 -m milestone_2.codesign --workload        # compare 640px vs 320px YOLO-World
     python3 -m milestone_2.codesign --budget          # re-run sweep at tight / loose budgets
 
-Typical workflow: start with --probe to get results in ~30 min, then use
---full overnight if you want whole-model numbers.
+Suggested to run all at once: 
+    python3 -m milestone_2.codesign --probe --budget --workload 
+    
+Make sure to caffeinate (outside of docker) so your computer doesn't sleep!
+
+We use --probe to get faster results for design choices in ~30 min
+
+--full is available to run overnight if you want whole-model numbers.
+    NOTE: --full has led to OOM errors that we haven't fully debugged
 """
 
 from __future__ import annotations
