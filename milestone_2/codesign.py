@@ -892,7 +892,6 @@ if __name__ == "__main__":
     if not any(vars(args).values()):
         parser.print_help()
 
-    global _PMAPPING_CAP, _WORKERS
     _PMAPPING_CAP = args.cap
     _WORKERS = args.workers
 
