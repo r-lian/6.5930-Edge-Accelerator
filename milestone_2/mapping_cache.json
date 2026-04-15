@@ -2,5 +2,25 @@
   "yolo_world.yaml:T1:32macs:256kb:16scratch:deep_embedded": {
     "energy_j": 0.0023184609599411488,
     "latency_s": 0.26214399933815
+  },
+  "yolo_world.yaml:T7:32macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.008487519808113575,
+    "latency_s": 0.16322560608386993,
+    "edp": 0.0013853805648281897
+  },
+  "yolo_world.yaml:T10:32macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.00842952448874712,
+    "latency_s": 0.1287987232208252,
+    "edp": 0.0010857119915093083
+  },
+  "yolo_world.yaml:T16:32macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.0015751272439956665,
+    "latency_s": 0.0870399996638298,
+    "edp": 0.00013709907478787198
+  },
+  "yolo_world.yaml:T19:32macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.0164,
+    "latency_s": 0.128,
+    "edp": 0.0020992
   }
 }
