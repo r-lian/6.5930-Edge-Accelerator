@@ -44,6 +44,7 @@ import math
 import os
 import sys
 import tempfile
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -70,6 +71,11 @@ _CACHE_FILE = _REPO_ROOT / "milestone_2" / "mapping_cache.json"
 _RESULTS_DIR = _REPO_ROOT / "milestone_2" / "results"
 
 _cache: dict[str, dict] = {}
+
+# ── Mapper settings ───────────────────────────────────────────────────────────
+# Set from CLI args in __main__; defaults match prior behavior but cap at 128.
+_PMAPPING_CAP: int = 128   # --cap N
+_WORKERS: int = 4          # --workers N  (1 = serial)
 
 
 def _cache_key(workload_yaml: str, layer_idx: int, num_macs: int,
@@ -220,21 +226,16 @@ class ArchResult:
         return (self.total_energy_j / lat * 1000) if lat > 0 else float("inf")
 
 
-def _map_layer(
+def _do_mapping(
     workload_yaml: str,
     layer_idx: int,
     num_macs: int,
     sram_kb: int,
     scratch_kb: int,
     system_preset: str,
+    pmapping_cap: int,
 ) -> LayerResult:
-    """Extract a single einsum and map it. Returns LayerResult. Caches results to disk."""
-    key = _cache_key(workload_yaml, layer_idx, num_macs, sram_kb, scratch_kb, system_preset)
-    if key in _cache:
-        c = _cache[key]
-        return LayerResult(layer_idx=layer_idx, energy_j=c["energy_j"], latency_s=c["latency_s"])
-        # note: LayerResult.__post_init__ recomputes edp from energy×latency
-
+    """Execute AccelForge mapping for one layer. No cache interaction."""
     raw = Path(workload_yaml).read_text().replace("{{BATCH_SIZE}}", "1")
     doc = yaml.safe_load(raw)
     einsums = doc["workload"]["einsums"]
@@ -268,20 +269,35 @@ def _map_layer(
             system_preset=system_preset,
         )
         spec.mapper.metrics = Metrics.LATENCY | Metrics.ENERGY
-        spec.mapper.max_pmapping_templates_per_einsum = 256
+        spec.mapper.max_pmapping_templates_per_einsum = pmapping_cap
         mappings = spec.map_workload_to_arch()
         row = mappings.data.iloc[0]
-        result = LayerResult(
+        return LayerResult(
             layer_idx=layer_idx,
             energy_j=float(row["Total<SEP>energy"]),
             latency_s=float(row["Total<SEP>latency"]),
         )
-        _cache[key] = {"energy_j": result.energy_j, "latency_s": result.latency_s,
-                       "edp": result.edp}
-        _write_cache()
-        return result
     finally:
         os.unlink(tmp)
+
+
+def _map_layer(
+    workload_yaml: str,
+    layer_idx: int,
+    num_macs: int,
+    sram_kb: int,
+    scratch_kb: int,
+    system_preset: str,
+) -> LayerResult:
+    """Map one layer using cache. Calls _do_mapping on cache miss."""
+    key = _cache_key(workload_yaml, layer_idx, num_macs, sram_kb, scratch_kb, system_preset)
+    if key in _cache:
+        c = _cache[key]
+        return LayerResult(layer_idx=layer_idx, energy_j=c["energy_j"], latency_s=c["latency_s"])
+    result = _do_mapping(workload_yaml, layer_idx, num_macs, sram_kb, scratch_kb, system_preset, _PMAPPING_CAP)
+    _cache[key] = {"energy_j": result.energy_j, "latency_s": result.latency_s, "edp": result.edp}
+    _write_cache()
+    return result
 
 
 def _map_config(
@@ -311,6 +327,84 @@ def _map_config(
         except Exception as exc:
             print(f"FAILED: {exc}")
     return result
+
+
+def _map_config_worker(
+    workload_yaml: str,
+    layers: list,
+    num_macs: int,
+    sram_kb: int,
+    scratch_kb: int,
+    system_preset: str,
+    label: str,
+    pmapping_cap: int,
+    cache_snapshot: dict,
+) -> tuple:
+    """ProcessPoolExecutor worker. Maps all layers for one config.
+    Reads cache_snapshot for hits; returns (ArchResult, new_cache_entries)."""
+    area = compute_area_mm2(num_macs, sram_kb, scratch_kb)
+    result = ArchResult(
+        label=label, num_macs=num_macs, sram_kb=sram_kb,
+        scratch_kb=scratch_kb, system_preset=system_preset, area_mm2=area,
+    )
+    new_entries: dict = {}
+    for idx in layers:
+        key = _cache_key(workload_yaml, idx, num_macs, sram_kb, scratch_kb, system_preset)
+        if key in cache_snapshot:
+            c = cache_snapshot[key]
+            lr = LayerResult(layer_idx=idx, energy_j=c["energy_j"], latency_s=c["latency_s"])
+            print(f"  [{label}] T{idx} (cached) E={lr.energy_j:.3e} J  lat={lr.latency_s:.3e} s", flush=True)
+        else:
+            print(f"  [{label}] T{idx} mapping ...", flush=True)
+            try:
+                lr = _do_mapping(workload_yaml, idx, num_macs, sram_kb, scratch_kb, system_preset, pmapping_cap)
+                new_entries[key] = {"energy_j": lr.energy_j, "latency_s": lr.latency_s, "edp": lr.edp}
+                print(f"  [{label}] T{idx} done   E={lr.energy_j:.3e} J  lat={lr.latency_s:.3e} s", flush=True)
+            except Exception as exc:
+                print(f"  [{label}] T{idx} FAILED: {exc}", flush=True)
+                continue
+        result.layer_results.append(lr)
+    return result, new_entries
+
+
+def _run_configs_parallel(layers: list, configs: list) -> list:
+    """Map a list of configs, optionally in parallel.
+
+    Each config is a tuple: (workload_yaml, nmacs, sram_kb, scratch_kb, system_preset, label).
+    Falls back to serial _map_config when _WORKERS == 1.
+    Returns list[ArchResult] (order not guaranteed when parallel).
+    """
+    if _WORKERS == 1:
+        results = []
+        for (workload_yaml, nmacs, sram, scratch, preset, label) in configs:
+            area = compute_area_mm2(nmacs, sram, scratch)
+            print(f"\n  Config: {label}  area={area:.3f} mm²")
+            results.append(_map_config(workload_yaml, layers, nmacs, sram, scratch, preset, label))
+        return results
+
+    print(f"\n  Dispatching {len(configs)} configs across {_WORKERS} workers ...")
+    cache_snap = dict(_cache)
+    results = []
+    with ProcessPoolExecutor(max_workers=_WORKERS) as pool:
+        future_to_label = {
+            pool.submit(
+                _map_config_worker,
+                workload_yaml, layers, nmacs, sram, scratch, preset, label, _PMAPPING_CAP, cache_snap,
+            ): label
+            for (workload_yaml, nmacs, sram, scratch, preset, label) in configs
+        }
+        for future in as_completed(future_to_label):
+            label = future_to_label[future]
+            try:
+                result, new_entries = future.result()
+                _cache.update(new_entries)
+                if new_entries:
+                    _write_cache()
+                results.append(result)
+                print(f"  ✓ {label}  E={result.total_energy_j:.3e} J  lat={result.total_latency_s:.3e} s")
+            except Exception as exc:
+                print(f"  ✗ {label}  FAILED: {exc}")
+    return results
 
 
 # ── Serialization helpers ─────────────────────────────────────────────────────
@@ -565,18 +659,16 @@ def experiment_probe_sweep(
     print(f"  Layers: {[LAYER_NAMES[i] for i in PROBE_LAYERS]}")
     print("=" * 100)
 
-    all_results = []
+    configs_to_run = []
     for (nmacs, sram, scratch, preset) in DESIGN_SPACE:
         label = f"{nmacs:>3}MACs/{sram:>3}KB/{scratch:>2}KB-scratch/{preset[:4]}"
         area  = compute_area_mm2(nmacs, sram, scratch)
         if budget_mm2 and area > budget_mm2 * 1.01:
             print(f"  Skip {label}  (area={area:.3f} mm² > area budget)")
             continue
-        print(f"\n  Config: {label}  area={area:.3f} mm²")
-        r = _map_config(
-            WORKLOAD_640, PROBE_LAYERS, nmacs, sram, scratch, preset, label
-        )
-        all_results.append(r)
+        configs_to_run.append((WORKLOAD_640, nmacs, sram, scratch, preset, label))
+
+    all_results = _run_configs_parallel(PROBE_LAYERS, configs_to_run)
 
     print("\n--- PROBE LAYER SWEEP RESULTS ---")
     _print_sweep_table(all_results, budget_mm2, power_mw)
@@ -692,26 +784,35 @@ def experiment_workload_comparison():
     generate_320px_workload()
     layers_to_map = PROBE_LAYERS
 
-    for label, nmacs, sram, scratch, preset in WORKLOAD_COMPARISON_CONFIGS:
+    # Build flat list of all (hw_config × resolution) combos and map in parallel.
+    all_combos = []
+    for hw_label, nmacs, sram, scratch, preset in WORKLOAD_COMPARISON_CONFIGS:
+        area = compute_area_mm2(nmacs, sram, scratch)
+        print(f"  Queuing: {hw_label}  ({nmacs}MACs/{sram}KB/{scratch}KB-scratch)  area={area:.3f} mm²")
+        all_combos.append((WORKLOAD_640, nmacs, sram, scratch, preset, f"{hw_label} 640px"))
+        all_combos.append((WORKLOAD_320, nmacs, sram, scratch, preset, f"{hw_label} 320px"))
+
+    all_r = _run_configs_parallel(layers_to_map, all_combos)
+    r_by_label = {r.label: r for r in all_r}
+
+    for hw_label, nmacs, sram, scratch, preset in WORKLOAD_COMPARISON_CONFIGS:
         area = compute_area_mm2(nmacs, sram, scratch)
         print(f"\n{'─'*100}")
-        print(f"  Config: {label}  ({nmacs} MACs / {sram} KB SRAM / {scratch} KB scratch"
+        print(f"  Config: {hw_label}  ({nmacs} MACs / {sram} KB SRAM / {scratch} KB scratch"
               f" / {preset})  area={area:.3f} mm²")
         print(f"{'─'*100}")
-
-        print("\n  Mapping 640px workload ...")
-        r640 = _map_config(WORKLOAD_640, layers_to_map, nmacs, sram, scratch, preset, f"{label} 640px")
-
-        print("\n  Mapping 320px workload ...")
-        r320 = _map_config(WORKLOAD_320, layers_to_map, nmacs, sram, scratch, preset, f"{label} 320px")
-
-        _print_workload_comparison(r640, r320, layers_to_map)
-        save_results(f"workload_{label.split()[0].lower()}", {
-            "hw_config": {"label": label, "num_macs": nmacs, "sram_kb": sram,
-                          "scratch_kb": scratch, "system_preset": preset, "area_mm2": area},
-            "r640": _arch_result_to_dict(r640),
-            "r320": _arch_result_to_dict(r320),
-        })
+        r640 = r_by_label.get(f"{hw_label} 640px")
+        r320 = r_by_label.get(f"{hw_label} 320px")
+        if r640 and r320:
+            _print_workload_comparison(r640, r320, layers_to_map)
+            save_results(f"workload_{hw_label.split()[0].lower()}", {
+                "hw_config": {"label": hw_label, "num_macs": nmacs, "sram_kb": sram,
+                              "scratch_kb": scratch, "system_preset": preset, "area_mm2": area},
+                "r640": _arch_result_to_dict(r640),
+                "r320": _arch_result_to_dict(r320),
+            })
+        else:
+            print(f"  Incomplete results for {hw_label} — skipping comparison.")
 
 
 def experiment_full_model(workload_yaml: str = WORKLOAD_640):
@@ -778,10 +879,22 @@ if __name__ == "__main__":
         "--full-320", action="store_true",
         help="Map all 21 layers of 320px workload on baseline arch"
     )
+    parser.add_argument(
+        "--cap", type=int, default=128, metavar="N",
+        help="Max pmapping templates per einsum (default: 128; lower=faster, higher=more optimal)"
+    )
+    parser.add_argument(
+        "--workers", type=int, default=4, metavar="N",
+        help="Parallel worker processes (default: 4; use 1 for serial)"
+    )
     args = parser.parse_args()
 
     if not any(vars(args).values()):
         parser.print_help()
+
+    global _PMAPPING_CAP, _WORKERS
+    _PMAPPING_CAP = args.cap
+    _WORKERS = args.workers
 
     _load_cache()
     if args.probe:
