@@ -115,9 +115,9 @@ PROBE_LAYERS = [1, 7, 10, 16, 19]
 # We define three budget tiers and find the best config within each.
 
 BUDGETS = {
-    "tight":    {"area_mm2": 0.20, "label": "Tight  (0.20 mm²)"},
-    "baseline": {"area_mm2": 0.38, "label": "Baseline (0.38 mm²) — Ethos-U55/128"},
-    "relaxed":  {"area_mm2": 0.80, "label": "Relaxed (0.80 mm²)"},
+    "tight":    {"area_mm2": 0.20, "power_mw": 50,  "label": "Tight    (≤0.20 mm² / ≤50 mW)"},
+    "baseline": {"area_mm2": 0.38, "power_mw": 100, "label": "Baseline (≤0.38 mm² / ≤100 mW) — ~Ethos-U55/128 area"},
+    "relaxed":  {"area_mm2": 0.80, "power_mw": 500, "label": "Relaxed  (≤0.80 mm² / ≤500 mW)"},
 }
 
 # ── Architecture design space ─────────────────────────────────────────────────
@@ -139,7 +139,7 @@ DESIGN_SPACE = [
     ( 64, 384,  32, "deep_embedded"),
     ( 64, 384,  32, "high_end_embedded"),
     (128, 256,  16, "deep_embedded"),
-    (128, 384,  32, "deep_embedded"),       # Ethos-U55/128 baseline
+    (128, 384,  32, "deep_embedded"),       # reference: Ethos-U55/128, 384KB, low-BW preset
     (128, 384,  32, "high_end_embedded"),
     (128, 512,  64, "high_end_embedded"),
     (256, 384,  32, "high_end_embedded"),
@@ -206,6 +206,12 @@ class ArchResult:
     def total_edp(self) -> float:
         return self.total_energy_j * self.total_latency_s
 
+    @property
+    def avg_power_mw(self) -> float:
+        """Average dynamic power across mapped layers: total_energy / total_latency in mW."""
+        lat = self.total_latency_s
+        return (self.total_energy_j / lat * 1000) if lat > 0 else float("inf")
+
 
 def _map_layer(
     workload_yaml: str,
@@ -220,6 +226,7 @@ def _map_layer(
     if key in _cache:
         c = _cache[key]
         return LayerResult(layer_idx=layer_idx, energy_j=c["energy_j"], latency_s=c["latency_s"])
+        # note: LayerResult.__post_init__ recomputes edp from energy×latency
 
     raw = Path(workload_yaml).read_text().replace("{{BATCH_SIZE}}", "1")
     doc = yaml.safe_load(raw)
@@ -262,7 +269,8 @@ def _map_layer(
             energy_j=float(row["Total<SEP>energy"]),
             latency_s=float(row["Total<SEP>latency"]),
         )
-        _cache[key] = {"energy_j": result.energy_j, "latency_s": result.latency_s}
+        _cache[key] = {"energy_j": result.energy_j, "latency_s": result.latency_s,
+                       "edp": result.edp}
         _write_cache()
         return result
     finally:
@@ -311,6 +319,7 @@ def _arch_result_to_dict(r: ArchResult) -> dict:
         "total_energy_j": r.total_energy_j,
         "total_latency_s": r.total_latency_s,
         "total_edp": r.total_edp,
+        "avg_power_mw": r.avg_power_mw,
         "layers": [
             {"layer_idx": lr.layer_idx, "energy_j": lr.energy_j,
              "latency_s": lr.latency_s, "edp": lr.edp}
@@ -325,15 +334,27 @@ def _sep():
     print("-" * 100)
 
 
-def _print_sweep_table(results: list[ArchResult], budget_mm2: Optional[float] = None):
-    """Print a summary table sorted by EDP, optionally marking budget violations."""
-    hdr = (f"  {'Config':<42} {'Area(mm²)':>9} {'Energy(J)':>11} "
+def _print_sweep_table(
+    results: list[ArchResult],
+    budget_mm2: Optional[float] = None,
+    power_mw: Optional[float] = None,
+):
+    """Print a summary table sorted by EDP. Configs violating either budget are excluded."""
+    hdr = (f"  {'Config':<42} {'Area(mm²)':>9} {'Pwr(mW)':>8} {'Energy(J)':>11} "
            f"{'Latency(s)':>11} {'EDP':>13} {'vs best':>8}")
     print(hdr)
     _sep()
 
-    valid = [r for r in results if budget_mm2 is None or r.area_mm2 <= budget_mm2]
-    over  = [r for r in results if budget_mm2 is not None and r.area_mm2 > budget_mm2]
+    def _over(r: ArchResult) -> str | None:
+        reasons = []
+        if budget_mm2 is not None and r.area_mm2 > budget_mm2:
+            reasons.append(f"area {r.area_mm2:.3f} > {budget_mm2:.2f} mm²")
+        if power_mw is not None and r.avg_power_mw > power_mw:
+            reasons.append(f"power {r.avg_power_mw:.1f} > {power_mw:.0f} mW")
+        return ", ".join(reasons) if reasons else None
+
+    valid = [r for r in results if _over(r) is None]
+    over  = [(r, _over(r)) for r in results if _over(r) is not None]
 
     sorted_valid = sorted(valid, key=lambda r: r.total_edp)
     best_edp = sorted_valid[0].total_edp if sorted_valid else None
@@ -342,14 +363,18 @@ def _print_sweep_table(results: list[ArchResult], budget_mm2: Optional[float] = 
         rel = f"{r.total_edp / best_edp:.2f}x" if best_edp else "   —"
         marker = "  ★ BEST" if r == sorted_valid[0] else ""
         print(
-            f"  {r.label:<42} {r.area_mm2:>9.3f} {r.total_energy_j:>11.3e} "
+            f"  {r.label:<42} {r.area_mm2:>9.3f} {r.avg_power_mw:>8.1f} {r.total_energy_j:>11.3e} "
             f"{r.total_latency_s:>11.3e} {r.total_edp:>13.3e} {rel:>8}{marker}"
         )
 
     if over:
-        print(f"  [Over budget ({budget_mm2:.2f} mm²) — excluded:]")
-        for r in sorted(over, key=lambda r: r.area_mm2):
-            print(f"  {r.label:<42} {r.area_mm2:>9.3f}  (exceeds budget)")
+        budget_str = " / ".join(filter(None, [
+            f"{budget_mm2:.2f} mm²" if budget_mm2 else None,
+            f"{power_mw:.0f} mW" if power_mw else None,
+        ]))
+        print(f"  [Over budget ({budget_str}) — excluded:]")
+        for r, reason in sorted(over, key=lambda x: x[0].area_mm2):
+            print(f"  {r.label:<42} {r.area_mm2:>9.3f} {r.avg_power_mw:>8.1f}  ({reason})")
     print()
 
 
@@ -515,12 +540,19 @@ def generate_320px_workload():
     print(f"  Generated {WORKLOAD_320}")
 
 
-def experiment_probe_sweep(budget_mm2: Optional[float] = None):
+def experiment_probe_sweep(
+    budget_mm2: Optional[float] = None,
+    power_mw: Optional[float] = None,
+):
     """
     Q1 + Q2: Sweep all architecture configs on the 5 probe layers.
-    Optional budget_mm2 constraint filters out over-budget configs in the table.
+    budget_mm2 is applied pre-mapping (skips configs by area).
+    power_mw is applied post-mapping (excludes configs from the results table).
     """
-    bstr = f" (budget ≤ {budget_mm2:.2f} mm²)" if budget_mm2 else ""
+    bparts = []
+    if budget_mm2: bparts.append(f"≤{budget_mm2:.2f} mm²")
+    if power_mw:   bparts.append(f"≤{power_mw:.0f} mW")
+    bstr = f" (budget: {', '.join(bparts)})" if bparts else ""
     print("=" * 100)
     print(f"EXPERIMENT 1 — Design space sweep on probe layers{bstr}")
     print(f"  Layers: {[LAYER_NAMES[i] for i in PROBE_LAYERS]}")
@@ -531,7 +563,7 @@ def experiment_probe_sweep(budget_mm2: Optional[float] = None):
         label = f"{nmacs:>3}MACs/{sram:>3}KB/{scratch:>2}KB-scratch/{preset[:4]}"
         area  = compute_area_mm2(nmacs, sram, scratch)
         if budget_mm2 and area > budget_mm2 * 1.01:
-            print(f"  Skip {label}  (area={area:.3f} mm² > budget)")
+            print(f"  Skip {label}  (area={area:.3f} mm² > area budget)")
             continue
         print(f"\n  Config: {label}  area={area:.3f} mm²")
         r = _map_config(
@@ -540,10 +572,10 @@ def experiment_probe_sweep(budget_mm2: Optional[float] = None):
         all_results.append(r)
 
     print("\n--- PROBE LAYER SWEEP RESULTS ---")
-    _print_sweep_table(all_results, budget_mm2)
+    _print_sweep_table(all_results, budget_mm2, power_mw)
     _print_layer_breakdown(all_results, LAYER_NAMES)
 
-    if not budget_mm2:  # don't double-save when called from experiment_budget_sensitivity
+    if not budget_mm2 and not power_mw:  # don't double-save from experiment_budget_sensitivity
         save_results("probe_sweep", [_arch_result_to_dict(r) for r in all_results])
     return all_results
 
@@ -560,17 +592,26 @@ def experiment_budget_sensitivity():
 
     all_budget_results = {}
     for name, bdef in BUDGETS.items():
-        budget = bdef["area_mm2"]
+        budget_a = bdef["area_mm2"]
+        budget_p = bdef["power_mw"]
         print(f"\n  ── Budget tier: {bdef['label']} ──")
-        results = experiment_probe_sweep(budget_mm2=budget)
-        if results:
-            best = min(results, key=lambda r: r.total_edp)
-            print(f"  → Best within budget: {best.label}  EDP={best.total_edp:.3e}  area={best.area_mm2:.3f} mm²")
+        results = experiment_probe_sweep(budget_mm2=budget_a, power_mw=budget_p)
+        # valid = configs that pass BOTH area and power constraints
+        valid = [r for r in results
+                 if r.area_mm2 <= budget_a and r.avg_power_mw <= budget_p]
+        if valid:
+            best = min(valid, key=lambda r: r.total_edp)
+            print(f"  → Best within budget: {best.label}  "
+                  f"EDP={best.total_edp:.3e}  area={best.area_mm2:.3f} mm²  "
+                  f"power={best.avg_power_mw:.1f} mW")
             all_budget_results[name] = {
-                "budget_mm2": budget,
+                "budget_mm2": budget_a,
+                "budget_power_mw": budget_p,
                 "best": _arch_result_to_dict(best),
-                "all": [_arch_result_to_dict(r) for r in results],
+                "all": [_arch_result_to_dict(r) for r in valid],
             }
+        else:
+            print(f"  → No configs fit within budget.")
     save_results("budget_sensitivity", all_budget_results)
 
 
