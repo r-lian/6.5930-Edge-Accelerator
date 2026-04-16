@@ -609,10 +609,13 @@ def generate_320px_workload():
         new_shape = []
         for constraint in e.get("iteration_space_shape", []):
             # constraints look like "0 <= p1 < 320"
-            parts = str(constraint).split("<")
-            if len(parts) == 3:
-                dim_name = parts[1].strip()
-                bound = int(parts[2].strip())
+            # Use rsplit on " < " to isolate the upper bound without
+            # accidentally splitting on the "<" inside "<=".
+            s = str(constraint)
+            if "<= " in s and " < " in s:
+                lhs, upper = s.rsplit(" < ", 1)
+                dim_name = lhs.split("<= ", 1)[-1].strip()
+                bound = int(upper.strip())
                 # Halve spatial dimensions (p and q), leave others untouched
                 if dim_name.startswith(("p", "q")):
                     bound = max(1, bound // 2)
@@ -747,14 +750,18 @@ def _print_workload_comparison(
     total_e320 = r320.total_energy_j
     total_l640 = r640.total_latency_s
     total_l320 = r320.total_latency_s
+    lsp_total = f"{total_l640/total_l320:.2f}x" if total_l320 > 0 else "  —"
+    esp_total = f"{total_e640/total_e320:.2f}x" if total_e320 > 0 else "  —"
+    lat_pct   = f"{100*(1 - total_l320/total_l640):.1f}%" if total_l640 > 0 and total_l320 > 0 else "  —"
+    e_pct     = f"{100*(1 - total_e320/total_e640):.1f}%" if total_e640 > 0 and total_e320 > 0 else "  —"
     print("  " + "-" * (len(hdr) - 2))
     print(f"  {'TOTAL (probe layers)':<38} {'':>10} {'':>10}"
           f" {total_l640:>11.3e} {total_l320:>11.3e}"
-          f" {total_l640/total_l320:>8.2f}x"
+          f" {lsp_total:>9}"
           f" {total_e640:>11.3e} {total_e320:>11.3e}"
-          f" {total_e640/total_e320:>7.2f}x")
-    print(f"\n  Latency reduction: {100*(1 - total_l320/total_l640):.1f}%"
-          f"   Energy reduction: {100*(1 - total_e320/total_e640):.1f}%")
+          f" {esp_total:>8}")
+    print(f"\n  Latency reduction: {lat_pct}"
+          f"   Energy reduction: {e_pct}")
     print(f"  Note: text encoder layers (T13-T17) are unchanged between resolutions.")
     print(f"  As spatial layers shrink, the text encoder becomes a larger fraction of total cost.")
     print()
