@@ -149,16 +149,18 @@ def plot_probe_sweep(data: list[dict], out_path: Path) -> None:
 
     # ── Panel 4: Energy vs Latency scatter (bubble = area) ────────────────────
     ax = axes[1, 1]
-    bubble_scale = 2000
+    bubble_scale = 800
     for c, col in zip(configs, colors):
         ax.scatter(c["total_latency_s"] * 1e3, c["total_energy_j"] * 1e3,
-                   s=c["area_mm2"] * bubble_scale, color=col, alpha=0.7,
-                   marker=_preset_marker(c["system_preset"]), edgecolors="black", linewidths=0.5, zorder=3)
+                   s=c["area_mm2"] * bubble_scale, color=col, alpha=0.35,
+                   marker=_preset_marker(c["system_preset"]), edgecolors=col, linewidths=0.8, zorder=3)
     ax.set_xlabel("Latency (ms)", fontsize=10)
     ax.set_ylabel("Energy (mJ)", fontsize=10)
     ax.set_title("Energy vs Latency  (bubble ∝ area)", fontsize=11)
     legend_patches = [mpatches.Patch(color=mac_color[m], label=f"{m} MACs") for m in mac_vals]
-    ax.legend(handles=legend_patches, fontsize=8, loc="upper right")
+    legend_patches.append(plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="gray", label="high_end BW"))
+    legend_patches.append(plt.Line2D([0], [0], marker="s", color="w", markerfacecolor="gray", label="deep_emb BW"))
+    ax.legend(handles=legend_patches, fontsize=8, loc="lower right")
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
@@ -168,31 +170,139 @@ def plot_probe_sweep(data: list[dict], out_path: Path) -> None:
 
 
 def plot_budget_sensitivity(data: dict, out_path: Path) -> None:
-    """Bar chart comparing best config per budget tier."""
+    """4-panel budget sensitivity visualization using all configs per tier."""
     budgets = list(data.keys())
-    metrics = ["total_energy_j", "total_latency_s", "total_edp", "area_mm2"]
-    metric_labels = ["Energy (mJ)", "Latency (ms)", "EDP (mJ·s × 10³)", "Area (mm²)"]
-    scale = [1e3, 1e3, 1e3, 1.0]
+    tier_cmap = plt.cm.Set1
+    tier_colors = {b: tier_cmap(i / max(len(budgets) - 1, 1)) for i, b in enumerate(budgets)}
 
-    fig, axes = plt.subplots(1, 4, figsize=(18, 5))
-    fig.suptitle("Budget Sensitivity: Best Config Per Budget Tier", fontsize=13)
+    fig, axes = plt.subplots(2, 2, figsize=(16, 11))
+    fig.suptitle("Budget Sensitivity: Area–EDP Co-design Trade-offs", fontsize=14, y=0.98)
 
-    colors = plt.cm.Set2(np.linspace(0, 0.6, len(budgets)))
-    for ax, metric, mlabel, sc in zip(axes, metrics, metric_labels, scale):
-        vals, xlabels = [], []
-        for b, bdat in data.items():
-            best = bdat.get("best")
-            if best:
-                vals.append(best.get(metric, 0) * sc)
-                xlabels.append(f"{b}\n{_short_label(best.get('label',''))}")
-            else:
-                vals.append(0)
-                xlabels.append(f"{b}\n(none)")
-        bars = ax.bar(xlabels, vals, color=colors, edgecolor="white")
-        ax.bar_label(bars, fmt="%.3f", fontsize=8, padding=2)
-        ax.set_ylabel(mlabel, fontsize=9)
-        ax.set_title(mlabel, fontsize=10)
-        ax.yaxis.grid(True, alpha=0.4)
+    # ── Panel 1: Area–EDP scatter — all configs, colored by budget tier ───────
+    ax = axes[0, 0]
+    for tier, bdat in data.items():
+        col = tier_colors[tier]
+        budget_limit = bdat.get("budget_mm2", None)
+        all_cfgs = bdat.get("all", [])
+        best = bdat.get("best")
+        if not all_cfgs and best:
+            all_cfgs = [best]
+        xs = [c["area_mm2"] for c in all_cfgs]
+        ys = [c["total_edp"] * 1e3 for c in all_cfgs]
+        ax.scatter(xs, ys, color=col, alpha=0.55, s=60, zorder=3,
+                   label=f"{tier} (≤{budget_limit} mm²)" if budget_limit else tier)
+        # Highlight best
+        if best:
+            ax.scatter(best["area_mm2"], best["total_edp"] * 1e3,
+                       color=col, s=180, marker="*", edgecolors="black",
+                       linewidths=0.8, zorder=5)
+        # Pareto front within this tier
+        if len(all_cfgs) > 1:
+            px = [c["area_mm2"] for c in all_cfgs]
+            py = [c["total_edp"] for c in all_cfgs]
+            pidx = _pareto_front(px, py)
+            ppx = [px[i] for i in pidx]
+            ppy = [py[i] * 1e3 for i in pidx]
+            ax.step(ppx + [ppx[-1]], ppy + [ppy[-1]], where="post",
+                    color=col, linewidth=1.2, linestyle="--", alpha=0.7, zorder=2)
+        # Budget limit vertical line
+        if budget_limit:
+            ax.axvline(budget_limit, color=col, linestyle=":", linewidth=0.9, alpha=0.6)
+
+    ax.legend(fontsize=8, loc="upper right")
+    ax.set_xlabel("Area (mm²)", fontsize=10)
+    ax.set_ylabel("EDP (mJ·s × 10³)", fontsize=10)
+    ax.set_title("Area–EDP Trade-offs by Budget Tier\n(★ = best; dashed = Pareto front; dotted = limit)", fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # ── Panel 2: EDP comparison — all configs per tier as grouped bars ────────
+    ax = axes[0, 1]
+    x_pos = 0
+    xticks, xticklabels = [], []
+    gap = 0.4
+    for tier, bdat in data.items():
+        col = tier_colors[tier]
+        all_cfgs = bdat.get("all", [])
+        best = bdat.get("best")
+        if not all_cfgs and best:
+            all_cfgs = [best]
+        sorted_cfgs = sorted(all_cfgs, key=lambda c: c["total_edp"])
+        tier_xs = []
+        for c in sorted_cfgs:
+            edp_val = c["total_edp"] * 1e3
+            bar_col = col if (best and c.get("label") != best.get("label")) else "none"
+            edge_col = col
+            hatch = "" if (best and c.get("label") == best.get("label")) else ".."
+            ax.bar(x_pos, edp_val, color=col,
+                   alpha=1.0 if (best and c.get("label") == best.get("label")) else 0.45,
+                   edgecolor="black", linewidth=0.4, hatch=hatch if hatch else None, width=0.7)
+            tier_xs.append(x_pos)
+            x_pos += 1
+        # Tier label centered under the group
+        if tier_xs:
+            xticks.append(np.mean(tier_xs))
+            xticklabels.append(f"{tier}\n({len(sorted_cfgs)} cfgs)")
+        x_pos += gap
+
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticklabels, fontsize=9)
+    ax.set_ylabel("EDP (mJ·s × 10³)", fontsize=10)
+    ax.set_title("EDP of All Configs Per Budget Tier\n(solid = best, hatched = others)", fontsize=10)
+    ax.yaxis.grid(True, alpha=0.4)
+    # Legend: one patch per tier
+    patches = [mpatches.Patch(color=tier_colors[b], label=b) for b in budgets]
+    ax.legend(handles=patches, fontsize=8)
+
+    # ── Panel 3: Per-layer EDP for best config in each tier ───────────────────
+    ax = axes[1, 0]
+    all_layer_ids = sorted(set(
+        l["layer_idx"]
+        for bdat in data.values()
+        for l in (bdat.get("best") or {}).get("layers", [])
+    ))
+    x = np.arange(len(all_layer_ids))
+    n_tiers = len(budgets)
+    width = 0.8 / max(n_tiers, 1)
+    for ti, (tier, bdat) in enumerate(data.items()):
+        best = bdat.get("best")
+        if not best:
+            continue
+        layer_map = {l["layer_idx"]: l["edp"] * 1e3 for l in best.get("layers", [])}
+        layer_edps = [layer_map.get(lid, 0.0) for lid in all_layer_ids]
+        offset = (ti - n_tiers / 2 + 0.5) * width
+        ax.bar(x + offset, layer_edps, width, label=f"{tier}: {_short_label(best['label'])}",
+               color=tier_colors[tier], alpha=0.85, edgecolor="white", linewidth=0.4)
+    ax.set_xticks(x)
+    ax.set_xticklabels([PROBE_LAYER_NAMES.get(lid, f"T{lid}") for lid in all_layer_ids], fontsize=9)
+    ax.set_ylabel("EDP (mJ·s × 10³)", fontsize=10)
+    ax.set_title("Per-Layer EDP — Best Config Per Budget Tier", fontsize=10)
+    ax.legend(fontsize=7, loc="upper right")
+    ax.yaxis.grid(True, alpha=0.4)
+
+    # ── Panel 4: Best-config summary metrics bar chart ────────────────────────
+    ax = axes[1, 1]
+    metrics = [
+        ("total_energy_j", "Energy (mJ)", 1e3),
+        ("total_latency_s", "Latency (ms)", 1e3),
+        ("total_edp", "EDP (×10³)", 1e3),
+        ("avg_power_mw", "Avg Power (mW)", 1.0),
+    ]
+    x = np.arange(len(metrics))
+    width = 0.8 / max(n_tiers, 1)
+    for ti, (tier, bdat) in enumerate(data.items()):
+        best = bdat.get("best")
+        if not best:
+            continue
+        vals = [best.get(m, 0) * sc for m, _, sc in metrics]
+        offset = (ti - n_tiers / 2 + 0.5) * width
+        bars = ax.bar(x + offset, vals, width, label=f"{tier}: {_short_label(best['label'])}",
+                      color=tier_colors[tier], alpha=0.85, edgecolor="white", linewidth=0.4)
+        ax.bar_label(bars, fmt="%.2f", fontsize=7, padding=2)
+    ax.set_xticks(x)
+    ax.set_xticklabels([lbl for _, lbl, _ in metrics], fontsize=9)
+    ax.set_title("Best-Config Summary Metrics Per Tier", fontsize=10)
+    ax.legend(fontsize=7, loc="upper right")
+    ax.yaxis.grid(True, alpha=0.4)
 
     plt.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
