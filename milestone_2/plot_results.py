@@ -310,33 +310,113 @@ def plot_budget_sensitivity(data: dict, out_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_workload_comparison(data: dict, out_path: Path) -> None:
-    """Side-by-side 640px vs 320px workload comparison."""
-    res640 = data.get("640px", {})
-    res320 = data.get("320px", {})
-    if not res640 or not res320:
-        print("[plot] workload file missing 640px or 320px keys — skipping")
+def plot_workload_comparison(tiers: list[dict], out_path: Path) -> None:
+    """
+    4-panel 640px vs 320px comparison across hardware tiers.
+
+    Each entry in `tiers` is a dict with keys: hw_config, r640, r320.
+    """
+    if not tiers:
+        print("[plot] no workload data — skipping")
         return
+
+    tier_cmap = plt.cm.Set1
+    tier_colors = {t["hw_config"]["label"]: tier_cmap(i / max(len(tiers) - 1, 1))
+                   for i, t in enumerate(tiers)}
+
+    fig, axes = plt.subplots(2, 2, figsize=(16, 11))
+    fig.suptitle("Workload Co-design: 640px vs 320px YOLO-World", fontsize=14, y=0.98)
 
     metrics = [
         ("total_energy_j", "Energy (mJ)", 1e3),
         ("total_latency_s", "Latency (ms)", 1e3),
         ("total_edp", "EDP (mJ·s × 10³)", 1e3),
     ]
-    fig, axes = plt.subplots(1, 3, figsize=(14, 5))
-    fig.suptitle("Workload Comparison: 640px vs 320px YOLO-World", fontsize=13)
 
-    for ax, (key, label, sc) in zip(axes, metrics):
-        v640 = res640.get(key, 0) * sc
-        v320 = res320.get(key, 0) * sc
-        bars = ax.bar(["640px", "320px"], [v640, v320], color=["#4C72B0", "#DD8452"],
-                      edgecolor="white", width=0.5)
-        ax.bar_label(bars, fmt="%.3f", fontsize=9, padding=3)
-        if v640 > 0:
-            improvement = (v640 - v320) / v640 * 100
-            ax.set_title(f"{label}\n({improvement:.1f}% reduction)", fontsize=10)
-        ax.set_ylabel(label, fontsize=9)
-        ax.yaxis.grid(True, alpha=0.4)
+    # ── Panel 1: Grouped bar — Energy, Latency, EDP per tier ──────────────────
+    ax = axes[0, 0]
+    x = np.arange(len(metrics))
+    n = len(tiers)
+    width = 0.8 / (n * 2)
+    for ti, t in enumerate(tiers):
+        hw = t["hw_config"]["label"]
+        col = tier_colors[hw]
+        r640, r320 = t.get("r640", {}), t.get("r320", {})
+        vals640 = [r640.get(m, 0) * sc for m, _, sc in metrics]
+        vals320 = [r320.get(m, 0) * sc for m, _, sc in metrics]
+        base = (ti * 2 - n + 0.5) * width
+        ax.bar(x + base,          vals640, width, color=col, alpha=0.9, edgecolor="white", label=f"{hw} 640px")
+        ax.bar(x + base + width,  vals320, width, color=col, alpha=0.45, edgecolor="white", hatch="//", label=f"{hw} 320px")
+    ax.set_xticks(x)
+    ax.set_xticklabels([lbl for _, lbl, _ in metrics], fontsize=9)
+    ax.set_title("640px (solid) vs 320px (hatched) — all tiers", fontsize=10)
+    ax.yaxis.grid(True, alpha=0.4)
+    ax.legend(fontsize=7, loc="upper right", ncol=2)
+
+    # ── Panel 2: Speedup / energy reduction ratios ────────────────────────────
+    ax = axes[0, 1]
+    tier_labels = [t["hw_config"]["label"] for t in tiers]
+    x = np.arange(len(tier_labels))
+    width = 0.25
+    ratio_metrics = [
+        ("total_latency_s", "Latency speedup", "#4C72B0"),
+        ("total_energy_j",  "Energy reduction", "#DD8452"),
+        ("total_edp",       "EDP reduction",    "#59A14F"),
+    ]
+    for ri, (key, lbl, col) in enumerate(ratio_metrics):
+        ratios = []
+        for t in tiers:
+            v640 = t.get("r640", {}).get(key, 0)
+            v320 = t.get("r320", {}).get(key, 0)
+            ratios.append(v640 / v320 if v320 > 0 else 0)
+        offset = (ri - 1) * width
+        bars = ax.bar(x + offset, ratios, width, color=col, alpha=0.85, edgecolor="white", label=lbl)
+        ax.bar_label(bars, fmt="%.2fx", fontsize=7, padding=2)
+    ax.axhline(1.0, color="gray", linestyle="--", linewidth=0.8, alpha=0.6)
+    ax.set_xticks(x)
+    ax.set_xticklabels(tier_labels, fontsize=8)
+    ax.set_ylabel("640px / 320px ratio  (>1 = 320px faster/cheaper)", fontsize=9)
+    ax.set_title("Resolution Reduction Ratios by Hardware Tier", fontsize=10)
+    ax.legend(fontsize=8)
+    ax.yaxis.grid(True, alpha=0.4)
+
+    # ── Panel 3: Per-layer energy — 640px vs 320px for baseline tier ──────────
+    ax = axes[1, 0]
+    # Use baseline tier if present, else first
+    base_tier = next((t for t in tiers if "baseline" in t["hw_config"]["label"].lower()), tiers[0])
+    r640_layers = {l["layer_idx"]: l for l in base_tier.get("r640", {}).get("layers", [])}
+    r320_layers = {l["layer_idx"]: l for l in base_tier.get("r320", {}).get("layers", [])}
+    layer_ids = sorted(set(r640_layers) | set(r320_layers))
+    x = np.arange(len(layer_ids))
+    width = 0.35
+    e640 = [r640_layers.get(lid, {}).get("energy_j", 0) * 1e3 for lid in layer_ids]
+    e320 = [r320_layers.get(lid, {}).get("energy_j", 0) * 1e3 for lid in layer_ids]
+    ax.bar(x - width/2, e640, width, color="#4C72B0", alpha=0.85, edgecolor="white", label="640px")
+    ax.bar(x + width/2, e320, width, color="#DD8452", alpha=0.85, edgecolor="white", label="320px")
+    ax.set_xticks(x)
+    ax.set_xticklabels([PROBE_LAYER_NAMES.get(lid, f"T{lid}") for lid in layer_ids], fontsize=9)
+    ax.set_ylabel("Energy (mJ)", fontsize=10)
+    ax.set_title(f"Per-Layer Energy: {base_tier['hw_config']['label']}", fontsize=10)
+    ax.legend(fontsize=9)
+    ax.yaxis.grid(True, alpha=0.4)
+
+    # ── Panel 4: Per-layer latency speedup across tiers ───────────────────────
+    ax = axes[1, 1]
+    for ti, t in enumerate(tiers):
+        hw = t["hw_config"]["label"]
+        col = tier_colors[hw]
+        r640_l = {l["layer_idx"]: l for l in t.get("r640", {}).get("layers", [])}
+        r320_l = {l["layer_idx"]: l for l in t.get("r320", {}).get("layers", [])}
+        ids = sorted(set(r640_l) & set(r320_l))
+        speedups = [r640_l[lid]["latency_s"] / r320_l[lid]["latency_s"]
+                    if r320_l[lid]["latency_s"] > 0 else 0 for lid in ids]
+        ax.plot([PROBE_LAYER_NAMES.get(lid, f"T{lid}") for lid in ids], speedups,
+                marker="o", color=col, linewidth=1.5, label=hw)
+    ax.axhline(1.0, color="gray", linestyle="--", linewidth=0.8, alpha=0.6)
+    ax.set_ylabel("Latency 640px / 320px  (>1 = 320px faster)", fontsize=9)
+    ax.set_title("Per-Layer Latency Speedup from 320px", fontsize=10)
+    ax.legend(fontsize=8)
+    ax.yaxis.grid(True, alpha=0.4)
 
     plt.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
@@ -356,8 +436,32 @@ def _detect_type(data) -> str:
         if isinstance(first_val, dict) and "budget_mm2" in first_val:
             return "budget_sensitivity"
         if "640px" in data or "320px" in data:
+            return "workload_legacy"
+        if "r640" in data and "r320" in data:
             return "workload"
     return "unknown"
+
+
+def _collect_workload_tiers(path: Path) -> tuple[list[dict], Path]:
+    """
+    Workload results are written as one file per hardware tier
+    (workload_tight_*.json, workload_baseline_*.json, workload_relaxed_*.json).
+    Collect all sibling files with the same timestamp and combine them.
+    Returns (list_of_tier_dicts, output_path).
+    """
+    # Extract timestamp suffix from filename (e.g. "20260417_005002")
+    stem = path.stem  # e.g. "workload_baseline_20260417_005002"
+    parts = stem.split("_")
+    # timestamp is last two underscore-parts joined
+    ts = "_".join(parts[-2:])
+    siblings = sorted(path.parent.glob(f"workload_*_{ts}.json"))
+    tiers = []
+    for s in siblings:
+        d = json.loads(s.read_text())
+        if "r640" in d and "r320" in d:
+            tiers.append(d)
+    out_path = path.parent / f"workload_{ts}_plot.png"
+    return tiers, out_path
 
 
 def plot_file(path: Path) -> None:
@@ -371,7 +475,14 @@ def plot_file(path: Path) -> None:
     elif kind == "budget_sensitivity":
         plot_budget_sensitivity(data, out_dir / f"{stem}_plot.png")
     elif kind == "workload":
-        plot_workload_comparison(data, out_dir / f"{stem}_plot.png")
+        tiers, out_path = _collect_workload_tiers(path)
+        plot_workload_comparison(tiers, out_path)
+    elif kind == "workload_legacy":
+        # old single-file format with 640px/320px keys
+        plot_workload_comparison(
+            [{"hw_config": {"label": stem}, "r640": data.get("640px", {}), "r320": data.get("320px", {})}],
+            out_dir / f"{stem}_plot.png",
+        )
     else:
         print(f"[plot] Unrecognized result format in {path.name}; skipping.")
 
@@ -394,9 +505,18 @@ def main():
         return
 
     if args.all:
+        seen_workload_ts: set[str] = set()
         for f in sorted(_RESULTS_DIR.glob("*.json")):
-            if "_plot" not in f.stem:
-                plot_file(f)
+            if "_plot" in f.stem:
+                continue
+            # For workload tier files, only plot once per timestamp
+            if f.stem.startswith("workload_"):
+                parts = f.stem.split("_")
+                ts = "_".join(parts[-2:])
+                if ts in seen_workload_ts:
+                    continue
+                seen_workload_ts.add(ts)
+            plot_file(f)
         return
 
     if args.file:

@@ -240,10 +240,12 @@ def _do_mapping(
     doc = yaml.safe_load(raw)
     einsums = doc["workload"]["einsums"]
 
-    rank_sizes = {
-        k: v for k, v in doc["workload"].get("rank_sizes", {}).items()
-        if isinstance(v, int)
-    }
+    rank_sizes = {}
+    for k, v in doc["workload"].get("rank_sizes", {}).items():
+        try:
+            rank_sizes[k] = int(v)
+        except (TypeError, ValueError):
+            pass
     single_doc = {
         "renames": doc.get("renames"),
         "workload": {
@@ -628,13 +630,14 @@ def generate_320px_workload():
 
     doc["workload"]["einsums"] = new_einsums
 
-    # Re-insert BATCH_SIZE template variable
+    # Leave N: 1 as a literal integer — _do_mapping does its own {{BATCH_SIZE}}
+    # replacement. Re-inserting the Jinja template as a quoted YAML string would
+    # cause yaml to parse it as str instead of int, silently dropping N from
+    # rank_sizes and producing an unbounded batch dimension.
     out_str = yaml.dump(
         {"renames": doc.get("renames"), "workload": doc["workload"]},
         default_flow_style=False, allow_unicode=True,
     )
-    # rank_sizes N was already resolved to 1; put the template back
-    out_str = out_str.replace("N: 1", "N: '{{BATCH_SIZE}}'")
 
     Path(WORKLOAD_320).write_text(
         "# YOLO-World-S  320×320 input  (spatial dims halved from yolo_world.yaml)\n"
