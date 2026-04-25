@@ -1,0 +1,105 @@
+\section{Project Overview}
+
+Edge neural-network accelerators are exceptionally constrained in area, power, and memory bandwidth, forcing designers to split a fixed silicon budget across compute (MAC width), on-chip memory (SRAM capacity and bandwidth), and local working memory (scratchpad). \textbf{Our central question is in hardware resource assignment, seeking guiding principles on how to best allocate these resources to minimize EDP on robotics-targeted workloads.} \newline
+
+We study these tradeoffs through the case of Arm's \href{https://developer.arm.com/Processors/Ethos-U55}{Ethos-U55}, a low-power edge NPU shipped in four SKUs (U55-32, U55-64, U55-128, U55-256) that vary MAC width (32/64/128/256 MACs/cycle) and internal scratchpad (16/16/24/48 KB) \href{https://developer.arm.com/documentation/109267/0103/Arm-Ethos-U-NPU/Ethos-U-hardware-architecture}{[1]}. Our benchmark workload is \href{https://docs.ultralytics.com/models/yolo-world/}{YOLO-World}, a compact open-vocabulary object detector suitable for edge deployment. It serves as a useful benchmark because stresses whole-system balance with layers of different bottlenecks: early spatial-heavy convolutions (bandwidth-bound), deep backbone convolutions with high reuse (compute-bound), and a dense text-encoder (weight-stationary, capacity-bound). \newline
+
+While YOLO-World already captures heterogeneous vision-language inference patterns relevant to edge perception, many robotics stacks such as the ones Amazon Robotics have additionally run a small decision or control module on top of detections (mapping bounding boxes and class logits to a low-dimensional action vector, gripper command, or waypoint residual).
+To reflect this without expanding scope significantly, we will extend the benchmark/experiments with a lightweight \textbf{action decoder/robotics head} expressed as a few additional linear layers (1--3 matrix multiplications / small MLP blocks) appended after the detector outputs.
+We consider two representative formulations: (i) an \emph{action decoder} that consumes a compact summary of detections and produces a low-dimensional action vector, and (ii) a \emph{small policy head} that operates on pooled visual features plus bbox statistics that will be incorporated into our workload.
+This extension preserves the same evaluation metrics (per-layer energy/latency/EDP under fixed area/power budgets) while making the workload more representative of deployed robotics/edge applications pipelines, and it isolates the incremental hardware cost of ``perception + a small control compute layer'' relative to only focusing on perception with YOLO-World. \\
+
+
+In early work we built a calibrated, modular Ethos-U55 model in AccelForge and swept 12 configurations covering all four shipped MAC widths, scratchpad sizes up to 128~KB (beyond Arm's published range), system SRAM capacities of 256--512~KB, and two Vela bandwidth presets (1.6 and 4.0~GB/s). Early findings suggest the shipped 4-SKU choices for the Ethos-U55 are insufficient for mixed, vision-focused workloads. \newline
+
+For the final project, we remove the Ethos SKU constraint and ask: under a fixed area and average-power budget representative of the edge class (e.g., 0.38~mm$^2$ and 100~mW), what is the Pareto-optimal allocation across MAC width, SRAM capacity, SRAM bandwidth, and scratchpad size for YOLO-World, and by how much does it improve over Arm's shipped SKUs? We expect the frontier to lie away from the shipped (MAC, scratchpad) pairings, favoring higher bandwidth and larger SRAM than Arm provides at the cost of MAC counts between the quantized 128/256 steps, and we expect the optimal allocation to shift qualitatively across budget tiers. The deliverable is a set of concrete design principles, per-resource, for future edge accelerators in this class. \newline
+
+
+In the process of arriving at these principles, it's imperative to compare the total model vs. the most energy-intensive layer and probe other layers independently. For the full YOLO-World model (21 layers), our primary variables of interest are per-layer energy, and workload-wide totals of latency from mapping and EDP. \\
+
+We explicitly do not assume that optimizing a single worst layer's $\mathrm{EDP}_\ell = E_\ell T_\ell$ is equivalent to optimizing $\mathrm{EDP}_{\mathrm{tot}}$ for the full model.
+Instead, worst-layer $\mathrm{EDP}_\ell$ is used only for bottleneck identification in designing a probe subset $\mathcal{P}$. \\
+
+Because exhaustive sweeps over all layers are expensive, we accelerate exploration using the probe subset $\mathcal{P}$ of representative layers, identified as bottlenecks or functionally relevant to the workload. For YOLO-World, this includes $\mathcal{P} = \{T_1, T_7, T_{10}, T_{16}, T_{19}\}$, spanning the stem convolution, mid- and deep-backbone convolutions, a text-encoder, and the detection head — covering $\approx 36.3\%$ of total model MACs. To approximate a ``composed'' workload from probes, we will scale total measurements by the proportion of total MACs represented by $\mathcal{P}$.
+
+\section{Technical Contributions}
+Our project contributes a better understanding of architecture-workload co-design for edge NPUs. Using \texttt{AccelForge}, we modeled a Ethos-U55 with empirically grounded estimates for energy, area, and bandwidth (MAC, SRAM, scratchpad, FLASH, and core-area anchor). This allows us to have fair resource-allocation comparisons for various hardware designs. We aim to use fixed constraints and sweep various accelerator configurations, such as MAC width, SRAM size, scratchpad size, and bandwidth presets to identify Pareto-optimal designs. We will evaluate our this on the YOLO-World workload, a diverse model that combines CNN image processing and text-encoder layers. This allows us to explore the design space for cross-layer bottlenecks that single layer workloads can hide (such as just a convolutional layer, or a text encoder). We focus on identifying an optimal architecture that can serve all layer classes efficiently and which resources reduce worst-layer EDP the most. \newline
+
+\noindent\textbf{Relation to Prior Work:} Our methodology is grounded in classical accelerator tradeoff frameworks (e.g., data movement dominance and reuse in \href{https://eems.mit.edu/wp-content/uploads/2016/04/eyeriss_isca_2016.pdf}{Eyeriss}; throughput/efficiency scaling in \href{https://arxiv.org/pdf/1704.04760}{TPU-style} arrays; Ethos-U55 edge constraints), but differs by directly targeting mixed CNN+text edge workloads and fixed-budget Pareto allocation. Additionally, the specific problem problem of hardware resource assignment has been explored in many works. Prior work has explored resource allocation using reinforcement learning (\href{https://arxiv.org/abs/2009.02010}{ConfuciuX}), but more recent work (\href{https://arxiv.org/abs/2110.00478}{SECDA}) demonstrates that structured co-design approaches on FPGA acceleratorscan achieve better efficiency by explicitly modeling the interaction between hardware resources and mapping strategies. \newline
+
+\noindent\textbf{Tradeoffs and limitations:} Our mapper-based study does not model full software/runtime effects (e.g., command-stream overhead, CPU fallback, compression runtime). Moreover, energy and area estimates are unpublished by ARM for the Ethos-U55, and thus inferred through data on similar accelerators and transistor scaling trends. To probe a broader range of configurations, we streamline the workload to its most defining layers, selecting $\sim 36\%$ of the total MACs. Finally – due to computational constraints – we test $256/576$ total mappings, found to be sufficient for relative comparisons. Consequently, results should be interpreted as architecture-level guidance under controlled assumptions rather than full system deployment numbers. \newline
+
+\noindent\textbf{Why this should work:} Our milestone runs already show strong signals of memory bottlenecks in the SKUs and diminishing returns from compute-only scaling. This makes us optimistic that there are more gains possible by prioritizing attacking this memory bottleneck.
+
+
+\section{Evaluation}
+\textbf{Baseline and fairness.}
+We compare against Ethos-U55-like baseline configurations from our milestone sweeps (including 128-MAC/384KB and 256-MAC/384KB classes). For fair comparison, we hold workload definition, mapper objective, process assumptions, and area/power models constant. Comparisons are made either at fixed area\,+\,power budget (primary) or reported jointly with area and power (Pareto plots). Area is computed analytically from the architecture parameters via AccelForge's area model (NPU core + system SRAM + scratchpad); average dynamic power is derived post-mapping as total energy divided by total latency, which the sweep infrastructure already computes per-config and uses to exclude budget-violating points.
+
+\textbf{Experiment 1: Fixed-budget Pareto frontier (hardware allocation).}
+\begin{itemize}
+    \item \emph{Question:} What architecture is optimal under a fixed area and power budget?
+    \item \emph{Method:} Sweep MACs, SRAM size, scratchpad size, and bandwidth preset; map probe layers per config; rank by EDP among configs that satisfy both constraints. Configs exceeding either area or average-power budget are excluded, with the violated constraint reported.
+    \item \emph{Class concept:} Data movement vs compute balance; diminishing returns in spatial array scaling; power as a first-class edge constraint alongside area.
+    \item \emph{Metrics:} Total energy, total latency, EDP, area (mm$^2$), average dynamic power (mW).
+    \item \emph{Plot:} Area (x-axis) vs EDP (y-axis), with marker size or color encoding average power; Pareto frontier drawn under the joint (area, power) feasible region; baseline SKU points marked.
+    \item \emph{Expected trend:} Memory-system improvements (especially bandwidth + SRAM) outperform MAC-only scaling once compute width is moderate. High-bandwidth presets can raise average power even when area shrinks, so the power constraint meaningfully reshapes the frontier relative to an area-only view.
+\end{itemize}
+
+
+% POSSIBLE OPTIONS
+% TODO: not done
+% - Vary workload (full vs. probe layers & how much we need to probe to achieve comparable results to full)
+% - Explore non-iterative optimization approaches to converge to best configurations like in RL paper
+% - Optimize workload for hardware
+\textbf{Experiment 2: Workload shape vs memory hierarchy (workload optimized for hardware).}
+\begin{itemize}
+    \item \emph{Question:} Holding hardware fixed, how far can we improve EDP-per-MAC by reshaping the workload so each layer's activation tile fits in scratchpad (Intermediates-only, per our arch YAML) or SRAM without eviction.
+    \item \emph{Method:} Fix three hardware configs from Exp.~1 (tight: 128~MAC/384~KB/32~KB/high; winner: \texttt{unknown}; memory-rich: 256~MAC/512~KB/128~KB/high). For each, sweep two workload knobs on the 5-layer probe: (1) input resolution $\{640, 448, 320\}^2$; (2) spatial $(P,Q)$ tile size, by filtering mappings to those whose inner-loop activation tile fits in scratchpad (32--128~KB depending on hardware point). The final accuracy of workload is \textit{not} validated, though EDP-per-MAC serves to give stable relative energy improvements (not just smaller model = faster, which would likely perform worse).
+    \item \emph{Class concept:} Working-set sizing and tile-to-buffer fit, and the distinction between partitioning a rank and holding it fully resident.
+    \item \emph{Metrics:} Energy, latency, EDP, EDP-per-MAC
+    \item \emph{Plot:} Three plots: 3D plot of input resolution (x-axis) vs. tile size (y-axis) vs. EDP-per-MAC; one for each architecture config
+    \item \emph{Expected trend:} Resolution scaling gives super-linear EDP gains per MAC on tight hardware, because activation tiles on memory-bound layers (T1, T19) cross into scratchpad residency, but only near-linear gains on the memory-rich architecture.
+\end{itemize}
+
+\textbf{Experiment 3: Relative impact of area vs. power constraints}
+\begin{itemize}
+    \item \emph{Question:} How does one having one constraint (i.e. area or power) while varying the other affect accelerator performance? 
+    \item \emph{Method:} Keep either area or power ceilings fixed, while sweeping the ceiling of the other. Area and power will both be measured at three tiers: $\leq$ 0.1mm$^2$, $\leq$ 0.38mm$^2$, $\leq$ 0.8mm$^2$ for area, and $\le$50\,mW, $\le$100\,mW, $\le$500\,mW for power. In total, we'll assess $9$ configurations.
+    \item \emph{Class concept:} Optimization under constraints, and which constraint is most binding at different stages.
+    \item \emph{Metrics:} Lowest EDP pair per fixed item, for a total of $6$ pairs. Selected architecture tuple (MACs, SRAM, scratch, preset) for each pair, achieved throughput, area utilization, power utilization
+    \item \emph{Plot:} Two plots: Energy (1) or power (2) (x-axis) vs. EDP (y-axis). Points are labeled with opposite constraint, and lowest EDP point is starred. 
+    \item \emph{Expected trend:} Increases in area or power will result in lower EDP (increase accelerator capability). Expect power to be more constraining than area at each area tier, meaning EDP won't fall as rapidly (better) along area tiers as along power tiers.
+\end{itemize}
+
+For the top $K$ configurations ranked by $\widehat{\mathrm{EDP}}_{\mathrm{probe}}$, we remap \textbf{all 21 layers} and compute $\mathrm{EDP}_{\mathrm{tot}}$. We then check if the 1st probe layer remains the most compute/energy-intensive relative to the whole model, and then refine weighting of our layers and rerun our experiments on these layers.
+
+\section{Timeline and Work Distribution}
+\textbf{Week 1 (infrastructure + broad sweeps).}
+\begin{itemize}
+    \item Finalize set of fixed-budget constraints.
+    \item Run Experiment 1, 2, and 3 sweeps (probe first, then attempt full model assessments).
+\end{itemize}
+
+\textbf{Week 2 (analysis + robustness).}
+\begin{itemize}
+    \item Generate final plots/tables.
+    \item Complete report/paper.
+    \item Synthesize design principles and edge accelerator guidelines.
+    \item Explore other design space search options (ML/RL, Bayesian)
+\end{itemize}
+
+\textbf{Team split.}
+\begin{itemize}
+    \item \textbf{Hector:} Architecture modeling; Config selection; Experiment sweep code.
+    \item \textbf{Richard:} Visualization and analysis; Explore other design space search techniques;
+    \item \textbf{Shared:} Hypothesis refinement; Result interpretation; Writing final report/paper.
+\end{itemize}
+
+\textbf{Risk mitigation.}
+\begin{itemize}
+    \item Use probe-layer methodology for rapid iteration, then validate key frontier points on larger layer sets.
+    \item Prioritize fixed-budget frontier and sensitivity experiments first (highest report value).
+\end{itemize} 
+
+\end{document}
