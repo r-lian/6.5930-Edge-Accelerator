@@ -18,10 +18,9 @@ Method:
     budget tier. Report the EDP-min config in each tier, plus four
     baseline-SKU markers for comparison.
 
-Run inside Docker:
-    docker compose exec labs python -m proposal.exp_1
-    docker compose exec labs python -m proposal.exp_1 --budget tight
-    docker compose exec labs python -m proposal.exp_1 --workload yolo
+Run inside Docker: (sudo on AWS instance)
+    > (sudo) docker compose exec labs bash
+    > python -m proposal.exp_1
 """
 
 from __future__ import annotations
