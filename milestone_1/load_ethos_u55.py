@@ -116,8 +116,8 @@ def build_ethos_u55_jinja_data(**overrides: Any) -> Dict[str, Any]:
     params.update(overrides)
 
     num_macs = int(params["num_macs"])
-    if num_macs not in (32, 64, 128, 256):
-        raise ValueError("num_macs must be one of {32, 64, 128, 256}.")
+    if num_macs not in (32, 64, 128, 192, 256, 512):
+        raise ValueError("num_macs must be one of {32, 64, 128, 192, 256, 512}.")
 
     system_preset = str(params["system_preset"])
     if system_preset not in SYSTEM_PRESETS:
