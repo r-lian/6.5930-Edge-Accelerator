@@ -372,5 +372,105 @@
     "energy_j": 0.0041346121579408646,
     "latency_s": 0.04165631905198097,
     "edp": 0.0001722327232073842
+  },
+  "yolo_world_robotics.yaml:T1:64macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.0023203787859529257,
+    "latency_s": 0.26214399933815,
+    "edp": 0.0006082733749291011
+  },
+  "yolo_world_robotics.yaml:T7:64macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.008531599305570126,
+    "latency_s": 0.16155648231506348,
+    "edp": 0.0013783351723295478
+  },
+  "yolo_world_robotics.yaml:T10:64macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.008501030504703522,
+    "latency_s": 0.14518271386623383,
+    "edp": 0.0012342026793324967
+  },
+  "yolo_world_robotics.yaml:T16:64macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.0015751272439956665,
+    "latency_s": 0.0870399996638298,
+    "edp": 0.00013709907478787198
+  },
+  "yolo_world_robotics.yaml:T19:64macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.01653873547911644,
+    "latency_s": 0.12783615291118622,
+    "edp": 0.00211424831766599
+  },
+  "yolo_world_robotics.yaml:T1:32macs:256kb:16scratch:high_end_embedded": {
+    "energy_j": 0.0023203787859529257,
+    "latency_s": 0.052428800612688065,
+    "edp": 0.00012165467671463714
+  },
+  "yolo_world_robotics.yaml:T7:32macs:256kb:16scratch:high_end_embedded": {
+    "energy_j": 0.008531599305570126,
+    "latency_s": 0.032311294227838516,
+    "edp": 0.0002756670153962991
+  },
+  "yolo_world_robotics.yaml:T10:32macs:256kb:16scratch:high_end_embedded": {
+    "energy_j": 0.008501030504703522,
+    "latency_s": 0.029036544263362885,
+    "edp": 0.00024684054853402193
+  },
+  "yolo_world_robotics.yaml:T16:32macs:256kb:16scratch:high_end_embedded": {
+    "energy_j": 0.0015751272439956665,
+    "latency_s": 0.01740800030529499,
+    "edp": 2.741981554435502e-05
+  },
+  "yolo_world_robotics.yaml:T19:32macs:256kb:16scratch:high_end_embedded": {
+    "energy_j": 0.016537902876734734,
+    "latency_s": 0.029491199180483818,
+    "edp": 0.00048772258776528035
+  },
+  "yolo_world_robotics.yaml:T1:32macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.0023203787859529257,
+    "latency_s": 0.26214399933815,
+    "edp": 0.0006082733749291011
+  },
+  "yolo_world_robotics.yaml:T7:32macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.008531599305570126,
+    "latency_s": 0.16155648231506348,
+    "edp": 0.0013783351723295478
+  },
+  "yolo_world_robotics.yaml:T10:32macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.008501030504703522,
+    "latency_s": 0.14518271386623383,
+    "edp": 0.0012342026793324967
+  },
+  "yolo_world_robotics.yaml:T16:32macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.0015751272439956665,
+    "latency_s": 0.0870399996638298,
+    "edp": 0.00013709907478787198
+  },
+  "yolo_world_robotics.yaml:T19:32macs:256kb:16scratch:deep_embedded": {
+    "energy_j": 0.01653873547911644,
+    "latency_s": 0.12783615291118622,
+    "edp": 0.00211424831766599
+  },
+  "yolo_world_robotics.yaml:T1:32macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.002318199025467038,
+    "latency_s": 0.26214399933815,
+    "edp": 0.0006077019637977313
+  },
+  "yolo_world_robotics.yaml:T7:32macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.008450793102383614,
+    "latency_s": 0.16155648231506348,
+    "edp": 0.0013652804063934987
+  },
+  "yolo_world_robotics.yaml:T10:32macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.008410453796386719,
+    "latency_s": 0.14518271386623383,
+    "edp": 0.001221052507005993
+  },
+  "yolo_world_robotics.yaml:T16:32macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.0015690717846155167,
+    "latency_s": 0.0870399996638298,
+    "edp": 0.0001365720076054594
+  },
+  "yolo_world_robotics.yaml:T19:32macs:384kb:32scratch:deep_embedded": {
+    "energy_j": 0.016403626650571823,
+    "latency_s": 0.11603967845439911,
+    "edp": 0.0019034715620183662
   }
 }
