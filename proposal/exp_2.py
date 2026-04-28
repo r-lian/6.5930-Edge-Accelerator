@@ -86,36 +86,43 @@ def run_sweep() -> dict:
     print(f"  Expected total mapper cells: "
           f"{len(HW_CONFIGS) * len(RESOLUTIONS) * len(common.PROBE_LAYERS)}\n")
 
+    # Initialize output skeleton — we fill it in after each resolution's batch.
     out: dict = {"by_hw": {}}
-
     for (hw_label, nmacs, sram, scratch, preset) in HW_CONFIGS:
         area = common.compute_area_mm2(nmacs, sram, scratch)
-        print("\n" + "─" * 100)
-        print(f"  HW: {hw_label}  ({nmacs} MAC / {sram} KB SRAM / "
-              f"{scratch} KB scratch / {preset})  area={area:.3f} mm²")
-        print("─" * 100)
-
-        hw_out: dict = {
+        out["by_hw"][hw_label] = {
             "label": hw_label,
             "num_macs": nmacs, "sram_kb": sram, "scratch_kb": scratch,
             "system_preset": preset, "area_mm2": area,
             "by_resolution": {},
         }
 
-        for (res, workload_yaml, macs_table) in RESOLUTIONS:
-            label = f"{hw_label}@{res}"
-            configs = [(nmacs, sram, scratch, preset, label)]
-            results = common.run_configs(workload_yaml, common.PROBE_LAYERS, configs)
-            assert len(results) == 1, f"Expected 1 result, got {len(results)}"
-            r = results[0]
-            probe_macs = probe_total_macs(macs_table)
-            edp_per_mac = r.total_edp / probe_macs if probe_macs else float("inf")
+    # For each resolution, submit ALL HW configs in one run_configs call so the
+    # ProcessPool can map them in parallel. (Earlier version submitted one config
+    # per call, which serialized everything.)
+    for (res, workload_yaml, macs_table) in RESOLUTIONS:
+        print("\n" + "─" * 100)
+        print(f"  Resolution {res}px  →  workload {Path(workload_yaml).name}  "
+              f"(mapping {len(HW_CONFIGS)} HW configs in parallel)")
+        print("─" * 100)
 
-            print(f"  {res:>3}px:  E={r.total_energy_j:.3e} J  "
+        configs = []
+        label_to_hw: dict[str, tuple] = {}
+        for (hw_label, nmacs, sram, scratch, preset) in HW_CONFIGS:
+            label = f"{hw_label}@{res}"
+            configs.append((nmacs, sram, scratch, preset, label))
+            label_to_hw[label] = (hw_label, nmacs, sram, scratch, preset)
+
+        results = common.run_configs(workload_yaml, common.PROBE_LAYERS, configs)
+        probe_macs = probe_total_macs(macs_table)
+
+        for r in results:
+            hw_label = label_to_hw[r.label][0]
+            edp_per_mac = r.total_edp / probe_macs if probe_macs else float("inf")
+            print(f"  {hw_label:<20} {res:>3}px:  E={r.total_energy_j:.3e} J  "
                   f"L={r.total_latency_s:.3e} s  EDP={r.total_edp:.3e}  "
                   f"MACs={probe_macs:>13,}  EDP/MAC={edp_per_mac:.3e}")
-
-            hw_out["by_resolution"][str(res)] = {
+            out["by_hw"][hw_label]["by_resolution"][str(res)] = {
                 "resolution": res,
                 "workload_file": Path(workload_yaml).name,
                 "probe_total_macs": probe_macs,
@@ -131,16 +138,20 @@ def run_sweep() -> dict:
                 ],
             }
 
-        # Per-HW summary table: how does EDP-per-MAC change as resolution shrinks?
-        print()
-        print(f"  Resolution sensitivity ({hw_label}):")
+    # Per-HW resolution-sensitivity summary table.
+    print()
+    for hw_label, hw_out in out["by_hw"].items():
+        if "640" not in hw_out["by_resolution"]:
+            continue
         baseline_640 = hw_out["by_resolution"]["640"]["edp_per_mac"]
+        print(f"  Resolution sensitivity ({hw_label}):")
         for res_str in ("640", "448", "320"):
+            if res_str not in hw_out["by_resolution"]:
+                continue
             v = hw_out["by_resolution"][res_str]
             ratio = v["edp_per_mac"] / baseline_640 if baseline_640 else float("inf")
             print(f"    {res_str:>3}px  EDP/MAC={v['edp_per_mac']:.3e}  "
                   f"({ratio:.3f}× baseline 640px)")
-        out["by_hw"][hw_label] = hw_out
 
     return out
 

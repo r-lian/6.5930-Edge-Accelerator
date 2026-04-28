@@ -472,5 +472,55 @@
     "energy_j": 0.016403626650571823,
     "latency_s": 0.11603967845439911,
     "edp": 0.0019034715620183662
+  },
+  "yolo_world_448.yaml:T1:128macs:384kb:32scratch:high_end_embedded": {
+    "energy_j": 0.001135833328589797,
+    "latency_s": 0.02569011226296425,
+    "edp": 2.9179685723488245e-05
+  },
+  "yolo_world_448.yaml:T7:128macs:384kb:32scratch:high_end_embedded": {
+    "energy_j": 0.004135101102292538,
+    "latency_s": 0.016091136261820793,
+    "edp": 6.653847529339459e-05
+  },
+  "yolo_world_448.yaml:T10:128macs:384kb:32scratch:high_end_embedded": {
+    "energy_j": 0.0041573322378098965,
+    "latency_s": 0.02231910452246666,
+    "edp": 9.27879327502993e-05
+  },
+  "yolo_world_448.yaml:T16:128macs:384kb:32scratch:high_end_embedded": {
+    "energy_j": 0.0015690717846155167,
+    "latency_s": 0.01740800030529499,
+    "edp": 2.731440210561667e-05
+  },
+  "yolo_world_448.yaml:T19:128macs:384kb:32scratch:high_end_embedded": {
+    "energy_j": 0.008038714528083801,
+    "latency_s": 0.0116080641746521,
+    "edp": 9.331391412370493e-05
+  },
+  "yolo_world_448.yaml:T1:128macs:512kb:64scratch:high_end_embedded": {
+    "energy_j": 0.0011355041060596704,
+    "latency_s": 0.02569011226296425,
+    "edp": 2.9171227959729797e-05
+  },
+  "yolo_world_448.yaml:T7:128macs:512kb:64scratch:high_end_embedded": {
+    "energy_j": 0.00408497080206871,
+    "latency_s": 0.01137254387140274,
+    "edp": 4.645650965992565e-05
+  },
+  "yolo_world_448.yaml:T10:128macs:512kb:64scratch:high_end_embedded": {
+    "energy_j": 0.004156865179538727,
+    "latency_s": 0.02231910452246666,
+    "edp": 9.277750842792698e-05
+  },
+  "yolo_world_448.yaml:T16:128macs:512kb:64scratch:high_end_embedded": {
+    "energy_j": 0.00156604393851012,
+    "latency_s": 0.01740800030529499,
+    "edp": 2.7261693359689537e-05
+  },
+  "yolo_world_448.yaml:T19:128macs:512kb:64scratch:high_end_embedded": {
+    "energy_j": 0.008013646118342876,
+    "latency_s": 0.011845632456243038,
+    "edp": 9.492670655228842e-05
   }
 }
