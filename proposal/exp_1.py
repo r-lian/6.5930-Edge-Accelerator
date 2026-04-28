@@ -43,53 +43,37 @@ from milestone_2 import common  # noqa: E402
 #   - Cover both BW presets only at the moderate-MAC tiers where BW choice matters
 #   - Keep ≥4 configs at the SKU-equivalent tiers (128, 256 MAC) for resolution
 DESIGN_SPACE: list[tuple[int, int, int, str]] = [
-    # 32 MAC — minimal compute
-    ( 32, 256,  16, "deep_embedded"),
-    ( 32, 256,  16, "high_end_embedded"),
-    ( 32, 384,  32, "deep_embedded"),
+    # 32 MAC — keep deep_embedded (only feasible in tight-power tier)
+    ( 32, 256,  16, "deep_embedded"),       # ✓ cached
+    ( 32, 256,  16, "high_end_embedded"),   # ✓ cached
+    ( 32, 384,  32, "deep_embedded"),       # ✓ cached
 
     # 64 MAC
-    ( 64, 256,  16, "deep_embedded"),
+    ( 64, 256,  16, "deep_embedded"),       # ✓ cached
     ( 64, 384,  32, "deep_embedded"),
     ( 64, 384,  32, "high_end_embedded"),
 
-    # 128 MAC — Ethos-U55/128 reference tier
-    (128, 256,  16, "deep_embedded"),
-    (128, 256,  32, "high_end_embedded"),
-    (128, 384,  32, "deep_embedded"),       # ≈ Ethos-U55/128 SKU baseline
+    # 128 MAC — Ethos-U55/128 tier; both presets matter for power tradeoffs
+    (128, 384,  32, "deep_embedded"),
     (128, 384,  32, "high_end_embedded"),
-    (128, 384,  64, "high_end_embedded"),
-    (128, 512,  64, "deep_embedded"),
     (128, 512,  64, "high_end_embedded"),
     (128, 512, 128, "high_end_embedded"),
 
-    # 192 MAC — between SKU steps (proposal expects optimum here)
-    (192, 256,  32, "high_end_embedded"),
-    (192, 384,  32, "deep_embedded"),
+    # 192 MAC — between SKU steps; high_end only (latency-bound regime)
     (192, 384,  32, "high_end_embedded"),
     (192, 384,  64, "high_end_embedded"),
-    (192, 512,  64, "high_end_embedded"),
     (192, 512, 128, "high_end_embedded"),
 
-    # 256 MAC — Ethos-U55/256 reference tier
-    (256, 384,  32, "deep_embedded"),
-    (256, 384,  32, "high_end_embedded"),   # ≈ SKU baseline
+    # 256 MAC — Ethos-U55/256 tier
+    (256, 384,  32, "high_end_embedded"),
     (256, 384,  64, "high_end_embedded"),
-    (256, 512,  64, "deep_embedded"),
-    (256, 512,  64, "high_end_embedded"),
     (256, 512, 128, "high_end_embedded"),
 
-    # 512 MAC — beyond Arm SKUs (compute-heavy regime)
-    (512, 384,  64, "high_end_embedded"),
-    (512, 512,  64, "high_end_embedded"),
+    # 512 MAC — compute-heavy regime
     (512, 512, 128, "high_end_embedded"),
 
-    # Large-area configs to populate the relaxed budget tier (≤0.80 mm²).
-    # SRAM > 512KB is outside Arm's published memory_mode list but reachable
-    # via system_sram_size_bytes override.
+    # Relaxed-tier (≥0.5 mm²) configs
     (256, 768, 128, "high_end_embedded"),
-    (512, 512, 256, "high_end_embedded"),
-    (512, 768, 128, "high_end_embedded"),
     (512, 768, 256, "high_end_embedded"),
 ]
 

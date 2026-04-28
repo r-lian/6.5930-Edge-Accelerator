@@ -25,7 +25,6 @@ import os
 import sys
 import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
