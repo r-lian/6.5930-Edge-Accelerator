@@ -1,0 +1,250 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{url}
+\usepackage{xcolor}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{Hardware Allocation and Workload Shaping for Edge Neural Proccesing Unit (NPUs): A Budget-Constrained YOLO-World Study on Ethos-U55-Class Designs}
+
+\author{
+\IEEEauthorblockN{Hector Astrom}
+\IEEEauthorblockA{hastrom@mit.edu}
+\and
+\IEEEauthorblockN{Richard Lian}
+\IEEEauthorblockA{rlian@mit.edu}
+}
+
+\maketitle
+
+\section{Introduction}
+Edge inference is now constrained less by peak arithmetic throughput than by the quality of resource allocation under strict silicon and energy envelopes. In the Ethos-U55 class of deployment targets, designers cannot scale every subsystem independently: MAC array width, shared SRAM capacity, local scratchpad size, and memory bandwidth all compete for the same area and power budget \cite{b7,b8,b9}. The practical problem is therefore not ``how to make the accelerator bigger,'' but how to allocate a fixed budget so that end-to-end workload cost is minimized. This is particularly acute for modern mixed workloads such as YOLO-World \cite{b10}, where early high-resolution convolutions, deep backbone convolutions, text-projection layers, and detection heads exercise different parts of the architecture and can shift the bottleneck from compute to movement and back within a single model.
+
+Our project begins from two milestones of infrastructure and empirical results, and then advances to a full constrained co-design study. In Milestone 1, we built a calibrated Ethos-U55-style model with explicit energy and area defaults grounded in published architecture anchors and energy-hierarchy priors, including Arm Ethos documentation, Horowitz-style operation costs, and movement-centric analysis from Eyeriss and related surveys \cite{b1,b2,b4,b7,b8,b9}. In Milestone 2, we unified architecture and workload evaluation into a single sweep framework and established initial trends: moving from lower to higher memory-bandwidth presets consistently reduced latency/EDP for key layers, while increasing MAC count alone exhibited diminishing returns unless memory service was also improved. Those findings motivate the final direction: treat edge accelerator design as a budget-constrained Pareto problem, not a SKU selection problem.
+
+The final study addresses a gap in both industrial SKU-centric practice and much of prior automated co-design work. Reinforcement-learning and structured co-design frameworks have shown the value of larger search spaces \cite{b5,b6}, but in this setting we prioritize physically interpretable knobs and transparent budget accounting over opaque search policies. Concretely, we evaluate candidate designs beyond published Ethos points, enforce explicit area and power constraints, and analyze performance over a representative probe set chosen to span distinct bottleneck regimes. The resulting contribution is a set of architecture-level design rules for edge NPUs under realistic constraints: when to spend budget on compute width, when to spend it on memory capacity, when bandwidth is the dominant lever, and how those priorities change across budget tiers and workload shapes.
+
+\section{Technical Contributions}
+This work contributes a complete, budget-aware architecture-workload evaluation flow for Ethos-U55-class edge accelerators and a set of experimentally grounded design conclusions derived from that flow. The architecture model captures the three components that dominate edge tradeoffs in this class: the MAC array as the primary compute engine, shared on-chip SRAM as the principal reuse buffer and traffic-reduction reservoir, and local scratchpad as the short-distance staging layer that enables low-cost inner-loop reuse \cite{b1,b4,b7,b8}. On top of this hierarchy, we model two distinct memory-service regimes, corresponding to low-bandwidth and high-bandwidth embedded operation, because sustained throughput in this domain is determined by how reliably data can feed compute rather than by peak MAC count alone \cite{b1,b3,b4}.
+
+Our methodology is intentionally structured around heterogeneous workload stress rather than single-layer microbenchmarks. We use YOLO-World as the base workload \cite{b10} because it contains materially different layer classes in one model: stem and detection-head convolutions that are movement-sensitive at large spatial extent, deeper backbone layers with stronger reuse opportunities, and text-projection layers with dense matmul characteristics. To keep exploration tractable without collapsing to a single bottleneck layer, we use a fixed five-layer probe set \((T1, T7, T10, T16, T19)\) that captures these regimes and covers about one-third of total model MACs. This choice follows first principles from the class: if conclusions are to generalize across the model, the evaluation set must include both movement-dominated and compute-dominated phases, not only one side of the roofline \cite{b1,b4}.
+
+From an optimization perspective, the core technical contribution is constrained selection over interpretable architecture tuples rather than unconstrained ranking. Each candidate is evaluated with the same mapping objective and assumptions, then filtered by fixed area and power budgets before ranking by energy-delay behavior. This is crucial for edge relevance: many points that look attractive in unconstrained EDP are nonviable once power or area is enforced. We therefore report not only best EDP points, but also the identity of the selected tuple and utilization of each constraint, which reveals whether a regime is compute-limited, memory-limited, area-limited, or power-limited. In practical terms, this produces guidance that can be used to design the next accelerator revision, not just to explain one benchmark run.
+
+A second contribution is explicit workload-shape co-design under fixed hardware, used to test whether architecture conclusions remain stable when workload pressure changes. We vary input resolution on fixed architecture points and analyze normalized efficiency trends to distinguish true hardware-workload matching gains from trivial operation-count reduction. This allows us to answer a question that is usually hand-waved in edge papers: whether an architecture that wins at one operating point remains efficient when the deployment team inevitably changes resolution for latency or power reasons.
+
+Finally, we include a robotics-oriented extension with an explicit action-decoder specification appended after the 21-layer YOLO-World perception stack. The added decoder is a three-layer MLP modeled as T21--T23 with batch size one and sequence length one (a pooled feature token), using dense projections 512 to 512, 512 to 256, and 256 to 64. In concrete terms, this corresponds to 262,144 MACs at T21, 131,072 MACs at T22, and 16,384 MACs at T23, for a total of 409,600 MACs. The weight matrices contain 409,600 INT8 parameters in aggregate, which is about 400 KB of raw weight storage before packing/alignment. Functionally, T21 serves as feature-space adaptation from vision backbone output to control-oriented latent space, T22 performs dimensionality compression to improve separability under tight memory budgets, and T23 produces a compact 64-dimensional action representation suitable for downstream control logic. Because the baseline YOLO-World stack is dominated by multi-hundred-million-MAC spatial convolutions, this decoder adds less than 0.02\% incremental compute while still injecting a qualitatively different operator regime (small-batch dense control inference) into the mapping problem. This preserves a unified area/power-constrained evaluation framework while making the workload materially more representative of embodied edge deployments where perception and action inference co-exist on the same NPU budget. Taken together, these pieces move the project from milestone-level exploration to a publishable hardware-architecture study: calibrated model assumptions, constrained and reproducible design-space evaluation, heterogeneous layer coverage, and interpretable design conclusions tied directly to edge budgets.
+
+
+\section{Experiment Setup}
+
+\subsection{Modeling Assumptions and Validity Checks}
+Our experimental conclusions are derived under explicit modeling assumptions, each chosen to preserve architectural signal while keeping search tractable. On-chip memory is modeled as a software-managed hierarchy (FLASH \(\rightarrow\) SRAM \(\rightarrow\) scratchpad) rather than a cache-coherent hierarchy; for this workload class, layer execution is statically scheduled and access patterns are structured, so replacement-policy and tag overheads are second-order relative to aggregate tensor movement. FLASH is modeled as effectively unbounded upper memory, SRAM and scratchpad are explicitly capacity-limited, and scratchpad placement is restricted to intermediate tensors to reflect practical local-storage use and to avoid infeasible weight-residency assumptions at this scale. Bandwidth is represented through two presets, and per-level latency is modeled from action counts and service rates, which captures contention at the level of sustained traffic but not cycle-accurate arbitration effects.
+
+At the compute and control level, MAC latency is modeled from operation count and array width at fixed clock, while leakage, NoC/control overhead, and host-side orchestration energy are not separately parameterized. In addition, mapping is performed one einsum (layer) at a time and aggregated, rather than simulating a fused end-to-end command stream. These choices mean our numbers should be interpreted as architecture-comparative efficiency estimates under controlled assumptions, not as sign-off silicon power traces. Broad design-space search also uses a fixed five-layer probe surrogate (\(T1,T7,T10,T16,T19\)) instead of full 21-layer remapping at every candidate point; this is a computational tradeoff intended to preserve cross-regime behavior (early spatial convolution, mid/deep convolution, text projection, detection head) while maintaining feasible runtime.
+
+Within the scope of this paper, we therefore interpret results as comparative architectural evidence under controlled assumptions rather than as absolute silicon sign-off numbers. The key validity criterion is consistency of trends across experiments under a fixed modeling framework: all candidate designs are evaluated with the same hierarchy assumptions, objective definitions, and budget filters, so relative deltas in energy, latency, and EDP remain meaningful for allocation decisions. A broader sensitivity analysis on parameter perturbations (e.g., SRAM/FLASH energy variation) is left as a direct extension for future work.
+
+\subsection{Detailed Workload and Architecture Characterization}
+To make the modeling scope explicit at publication level, we enumerate both workload structure and hardware structure at the same granularity used by the mapper. Table I reports the five probe layers in detail and summarizes the remaining layers by functional group. The probe set was chosen to span the dominant execution regimes in YOLO-World under edge deployment: high-resolution ingress convolution (T1), mid/deep stride-2 backbone transitions (T7, T10), text-side dense projection (T16), and high-cost detection-head convolution (T19). This specific set captures 36.35\% of modeled full-network MACs and includes both movement-sensitive and compute-dense operators, which is necessary for conclusions that generalize beyond a single bottleneck phase.
+
+\begin{table*}[t]
+\centering
+\caption{YOLO-World Workload Characterization with Probe-Layer Detail and Non-Probe Summary (INT8, Batch 1).}
+\label{tab:workload_probe_detailed}
+\scriptsize
+\begin{tabular}{|l|l|l|l|l|l|l|l|}
+\hline
+Group / Layer & Operator Role & Tensor Shape (In $\rightarrow$ Out) & Kernel / Type & MACs & Share of Total & Input / Output / Weight Footprint (bytes) & Arithmetic Intensity (MAC/byte) \\
+\hline
+T1 (probe) & Backbone stem feature extraction & $640^2\times3 \rightarrow 320^2\times32$ & Conv 3x3, s2 & 88,473,600 & 1.56\% & 1,228,800 / 3,276,800 / 864 & 19.63 \\
+\hline
+T7 (probe) & Backbone stage transition (P4 path) & $80^2\times128 \rightarrow 40^2\times256$ & Conv 3x3, s2 & 471,859,200 & 8.34\% & 819,200 / 409,600 / 294,912 & 309.68 \\
+\hline
+T10 (probe) & Backbone deep transition (P5 path) & $40^2\times256 \rightarrow 20^2\times512$ & Conv 3x3, s2 & 471,859,200 & 8.34\% & 409,600 / 204,800 / 1,179,648 & 263.01 \\
+\hline
+T16 (probe) & Text branch FFN expansion & $77\times512 \rightarrow 77\times2048$ & Dense matmul & 80,740,352 & 1.43\% & 39,424 / 157,696 / 1,048,576 & 64.82 \\
+\hline
+T19 (probe) & Detection head (high-spatial output) & $80^2\times128 \rightarrow 80^2\times128$ & Conv 3x3, s1 & 943,718,400 & 16.68\% & 819,200 / 819,200 / 147,456 & 528.44 \\
+\hline
+Probe subtotal & Cross-regime surrogate subset & T1, T7, T10, T16, T19 & Mixed & 2,056,650,752 & 36.35\% & Mixed & Mixed \\
+\hline
+Backbone non-probe (T2--T6, T8--T12) & Spatial feature hierarchy + SPPF reduction & Multi-scale conv and pointwise ops & 3x3 conv + 1x1 & 2,617,958,400 & 46.27\% & Dominated by spatial activations & Mostly memory-traffic sensitive \\
+\hline
+Text non-probe (T13--T15, T17) & Transformer projections and FFN contraction & Token-major dense projections & Dense matmul & 141,295,616 & 2.50\% & Weight-dominant dense ops & Moderate-to-high reuse \\
+\hline
+Fusion non-probe (T18) & Image-text channel projection at P5 & $20^2\times512 \rightarrow 20^2\times512$ & 1x1 pointwise & 104,857,600 & 1.85\% & Weight and activation balanced & Mixed \\
+\hline
+Head non-probe (T20) & Detection head on P4 & $40^2\times256 \rightarrow 40^2\times256$ & Conv 3x3, s1 & 943,718,400 & 16.68\% & Large weight and activation traffic & Compute and movement coupled \\
+\hline
+Full modeled stack (T0--T20) & YOLO-World core workload used in sweeps & 21 einsum layers & Heterogeneous & 5,658,265,600 & 100\% & INT8 tensor model throughout & Regime-dependent \\
+\hline
+\end{tabular}
+\vspace{1mm}
+\end{table*}
+
+Table II summarizes the Ethos-U55-class target architecture and the exact modeling choices used in the experiments. The purpose is to expose where the implementation follows public architectural intent and where it introduces controlled abstractions for tractable design-space exploration. In particular, we model three explicit storage tiers (FLASH, SRAM, scratchpad), two system bandwidth presets corresponding to embedded-service classes, and a parameterized MAC array with fixed clock assumptions. This preserves first-order tradeoffs between compute provisioning, data movement cost, and memory service limits, which are the dominant determinants of edge NPU efficiency.
+
+\begin{table*}[t]
+\centering
+\caption{Ethos-U55-Class Architecture Summary and Parameterization Used in This Study.}
+\label{tab:u55_arch_summary}
+\scriptsize
+\begin{tabular}{|l|l|l|l|l|}
+\hline
+Subsystem & Architectural Purpose & Public/Target Characterization & Modeled Parameterization Used & Experimental Relevance \\
+\hline
+MAC array & INT8 tensor compute engine & Discrete U55 classes (for example 32--256+ MAC scale points) & Sweep over 32, 64, 128, 192, 256, 512 MACs at fixed 1 GHz; per-MAC energy 0.08 pJ & Sets peak arithmetic throughput; only beneficial when feed bandwidth and residency are adequate \\
+\hline
+System SRAM & On-chip shared reuse buffer & Public memory-mode classes (for example dedicated 384 KB and 512 KB) & Capacity swept through architecture tuples; read/write energies 1.8/2.2 pJ per 8-bit access & Primary lever for reducing upper-memory traffic and improving sustained utilization \\
+\hline
+Local scratchpad & Near-compute staging storage & Small local working store near NPU datapath & Default 32 KB; modeled as high-bandwidth local tier with 0.50/0.60 pJ read/write energy & Captures short-distance reuse and buffering effects without full cycle-level datapath simulation \\
+\hline
+FLASH / external memory path & Upper-level backing store for large tensors & Slow, energy-expensive service relative to on-chip accesses & Read/write energies 15/20 pJ; bandwidth from preset classes; effectively unbounded capacity & Dominant penalty source when SRAM residency is insufficient \\
+\hline
+Bandwidth preset: deep\_embedded & Low-service embedded memory regime & Publicly aligned low-bandwidth embedded operating class & SRAM read/write 1.6 GB/s; FLASH read/write 0.1 GB/s & Represents feed-limited operation where memory service often binds before compute \\
+\hline
+Bandwidth preset: high\_end\_embedded & Higher-service embedded memory regime & Publicly aligned higher-bandwidth embedded operating class & SRAM read/write 4.0 GB/s; FLASH read/write 0.5 GB/s & Represents better-provisioned systems with improved sustained array occupancy \\
+\hline
+Area model & Physical budget accounting for candidate filtering & Public smallest-core anchor with scalable composition & Total area = NPU core + system SRAM + scratchpad; fixed-plus-linear compute-area fit from 32-MAC anchor & Enables fair budget filtering and Pareto analysis under shared assumptions \\
+\hline
+Power model & Runtime feasibility filter for edge deployment & Dynamic power constraints are critical for thermal and battery limits & Average dynamic power computed as mapped total energy divided by mapped total latency & Excludes EDP-attractive but deployment-infeasible architecture points \\
+\hline
+Precision / datatype & Arithmetic and movement granularity & Typical edge-NPU INT8 operating point & All tensors and actions modeled at 8-bit granularity & Maintains apples-to-apples comparison across all architecture and workload sweeps \\
+\hline
+\end{tabular}
+\vspace{1mm}
+\end{table*}
+
+Finally, Table III provides a chart-style fidelity map between target hardware/workload behavior and the abstractions used in the experiments. This chart directly documents why each simplification is acceptable for comparative architecture conclusions in this paper. The key principle is controlled consistency: every candidate is evaluated under the same abstractions, so ranking and tradeoff trends remain interpretable even when some second-order implementation effects are deferred.
+
+\begin{table*}[t]
+\centering
+\caption{Modeling Fidelity Chart: Target Behavior vs. Implemented Abstraction and Justification.}
+\label{tab:modeling_fidelity_chart}
+\scriptsize
+\begin{tabular}{|l|l|l|l|}
+\hline
+Target Feature & Implemented Modeling Choice & What Is Captured Well & Known Omission / Why Acceptable Here \\
+\hline
+Hierarchical memory movement & Explicit FLASH, SRAM, and scratchpad action counts with per-level energy and service-rate latency & First-order movement-energy and feed-bandwidth bottlenecks across layers & No cycle-accurate arbitration or bus contention; acceptable because the study compares relative architecture trends, not cycle-level RTL timing closure \\
+\hline
+On-chip data residency limits & Capacity-constrained SRAM and scratchpad with explicit tensor-placement constraints & Working-set fit effects and spill behavior into expensive upper memory & No cache-tag/replacement overhead; acceptable because mapping is software-managed and tensor schedules are static in this flow \\
+\hline
+Compute scaling with array width & MAC latency from operation count, clock, and MAC count & Throughput scaling and diminishing-return behavior under memory limits & No explicit control-pipeline bubbles; acceptable because cross-candidate control assumptions are identical \\
+\hline
+Ethos deployment class differences & Two bandwidth presets (deep\_embedded, high\_end\_embedded) with distinct SRAM/FLASH service rates & System-level feed differences that alter sustained utilization and EDP ranking & Board-level DRAM/host variability is abstracted; acceptable because preset contrast is used as a regime study, not board-specific prediction \\
+\hline
+YOLO-World heterogeneous operator mix & 21-layer einsum stack with conv, pointwise, and text dense-projection operators & Cross-regime layer diversity needed for co-design conclusions & Some operators (for example non-MAC activations/pooling details) simplified; acceptable because objective is architecture allocation under dominant MAC+movement costs \\
+\hline
+End-to-end model ranking & Probe surrogate for broad sweeps plus full-stack mapping for final reported evaluations & Fast exploration with representative bottleneck coverage and reproducible ranking flow & Probe is an approximation by design; acceptable because probe layers intentionally span spatial, deep-backbone, text, and head regimes \\
+\hline
+Area/power-constrained design selection & Uniform area model and dynamic-power filtering for all candidates & Feasible-design identification under realistic edge envelopes & Leakage and detailed thermal transients omitted; acceptable for this paper's comparative fixed-workload methodology \\
+\hline
+\end{tabular}
+\vspace{1mm}
+\end{table*}
+
+\subsection{Experiment 1: Fixed-Budget Hardware Allocation and Pareto Frontier}
+Our first experiment asks a direct architecture question: under a fixed edge budget, which resource allocation minimizes end-to-end cost for a representative YOLO-World workload slice? We evaluate an Ethos-U55-class design space where the key knobs are compute width (MAC count), shared on-chip capacity (system SRAM), local buffering (scratchpad), and memory-service capability (bandwidth preset). In this context, an Ethos ``SKU'' refers to one product point in Arm’s published family (for example, U55-128 or U55-256), each corresponding to a discrete tuple of compute width and local memory provisioning. The motivation for moving beyond SKU points is that SKU grids are coarse by construction; they are designed for product segmentation, not necessarily for workload-optimality under a specific area and power envelope.
+
+The architectural distinction between the two bandwidth presets is central to this experiment. The \texttt{deep\_embedded} preset models a lower-memory-throughput regime intended for stricter embedded power envelopes, while \texttt{high\_end\_embedded} models a significantly higher SRAM/FLASH service rate. Classically, this is the difference between a design that is compute-provisioned but feed-limited versus one that can keep the array occupied. In dataflow terms, larger or faster memory systems improve temporal and spatial reuse realization by reducing refill pressure and long-latency accesses; wider MAC arrays only translate into lower latency when data supply keeps pace. This is exactly the bottleneck crossover discussed throughout the course: peak arithmetic throughput is not the same as sustained throughput.
+
+Our mapping formulation is therefore explicitly movement-aware rather than compute-only. For each candidate architecture, layer mappings induce action counts at FLASH, SRAM, scratchpad, and MAC levels, and total layer energy is computed as the sum of action-weighted terms across those levels. Conceptually, this decomposes the objective into compute and hierarchy movement components, where FLASH/SRAM/scratchpad terms capture dataflow quality and MAC terms capture arithmetic work. The experiment’s hardware-allocation claim is validated only if improvements in EDP coincide with reduced movement pressure (lower movement-driven share and/or lower movement latency contribution), not merely with larger arrays. Conversely, if EDP falls while movement terms remain dominant and unchanged, the claim that bandwidth and memory hierarchy are the governing levers would be weakened. This criterion gives a direct logical test for whether observed gains are truly dataflow/memory-hierarchy driven.
+
+To make this test tractable but still representative, we use five probe layers from YOLO-World, chosen to span distinct operator regimes rather than only one family of convolutions. Layer T1 is the backbone stem convolution (large spatial map, low channel depth), which is typically bandwidth-sensitive because activation movement is high relative to arithmetic reuse. T7 and T10 are deeper backbone convolutions with progressively different reuse and channel structure; these layers probe the transition from movement-dominated behavior toward stronger compute utilization. T16 is the text-side feed-forward projection (dense matmul-like behavior), which has very different reuse and memory-access regularity than spatial convolutions. T19 is the detection-head convolution with very large compute volume at high spatial resolution, and is often one of the dominant contributors to total cost. This set therefore captures early-spatial, mid/deep-conv, text-projection, and head behavior in one sweep and avoids overfitting conclusions to a single layer type.
+
+For fairness, we compare all candidate points against Ethos-U55-like baselines from prior sweeps (including 128-MAC/384KB and 256-MAC/384KB classes), while holding workload definition, mapping objective, process assumptions, and area/power models fixed. Area is evaluated from the same analytical model for every candidate as NPU core plus system SRAM plus scratchpad; average dynamic power is computed from mapped energy and latency, then used to filter budget-violating points. The principal outcome metric is EDP, with total energy and total latency reported separately to expose whether a gain is compute-driven, movement-driven, or both. This metric set is sufficient to answer the experiment question because EDP captures the joint efficiency objective, while energy, latency, area, and power disambiguate why one architecture wins and whether it is feasible in the targeted edge envelope.
+
+\subsection{Experiment 2: Workload-Shape Co-Design Under Fixed Hardware}
+The second experiment addresses a complementary question: if hardware is fixed, how much of the remaining inefficiency is due to workload shape, and how does that dependence vary by architecture point? We hold hardware constant at three representative provisioning levels (tight, preliminary best, and memory-rich), then vary input resolution (640, 448, 320) while keeping the same probe-layer semantics. This is a deliberate workload-side intervention that changes spatial tensor sizes and therefore memory traffic, rather than changing model family or retraining objective.
+
+The scope boundary is explicit: we fix model precision and architecture semantics to isolate hardware-allocation effects. In practice, arithmetic precision (INT8-style energy model), operator definitions, and mapper objective remain unchanged across workload variants; only spatial problem size is rescaled through input resolution. We therefore do not claim algorithmic compression gains from pruning, quantization sweeps, or retraining in this section. Instead, this experiment isolates the hardware-visible effect of workload shaping on residency, traffic, and utilization under a constant architecture contract.
+
+The layer-level rationale follows first principles of data movement and reuse. For T1 and T19, shrinking spatial dimensions reduces activation footprint and movement pressure substantially; these are exactly the layers where memory hierarchy stress dominates and where improved fit in SRAM/scratchpad should yield disproportionate gains. T7 and T10 serve as intermediate checks: they are still convolutional, but their reuse structure differs from the stem and head, so they help identify whether benefits are broadly spatial or limited to extreme layers. T16 is intentionally included as a counterpoint, since text-side dense projection does not scale with image resolution in the same way and therefore should exhibit smaller relative benefit from spatial downscaling. This contrast is important: a credible co-design study must show both where an intervention helps and where it should not help.
+
+Methodologically, this experiment reflects core class ideas about working-set sizing, memory-level fit, and arithmetic intensity. Lowering resolution reduces not only total MACs but also activation residency requirements, which can shift execution from upper-memory traffic toward lower-memory reuse. To avoid reporting a trivial ``smaller model is faster'' result, we track EDP-per-MAC in addition to raw EDP, energy, and latency. EDP-per-MAC is the key interpretive metric here: if it improves, efficiency per unit computation improved, which indicates better hardware-workload matching rather than only reduced workload volume. Per-layer latency-speedup trends are also reported to verify that gains are concentrated where theory predicts (movement-sensitive spatial layers) and muted where theory predicts (text projection layer). Together these metrics answer the experiment question by separating scale effects from architectural efficiency effects and by revealing whether workload reshaping is a robust lever across hardware regimes or only a patch for under-provisioned memory systems.
+
+\subsection{Experiment 3: Area--Power Constraint Regimes and Binding-Limit Analysis}
+The third experiment asks which constraint is actually binding in practice: silicon area, power, or both depending on operating regime. Instead of treating budget as a single scalar, we evaluate a 3-by-3 grid of area and power caps and select the best feasible architecture in each cell. This is a constrained-design experiment, not a free-form sweep, and its purpose is to characterize regime changes in the optimizer’s choice.
+
+The architectural justification is straightforward. Area budgets govern how much compute and on-chip storage can exist simultaneously; power budgets govern how aggressively those resources can be exercised in sustained operation. A design that is optimal under area-only filtering can become infeasible or suboptimal once power is enforced, especially when high-bandwidth or high-activity settings raise dynamic power. Conversely, under strict area limits, the dominant tradeoff may be between compute width and memory capacity even when power headroom exists. This area-versus-power tension is a central edge-design concept from class: real accelerators are constrained by both physical provision and dynamic operation, and the active limiter shifts with regime.
+
+To make that shift explicit, each grid cell records not only the winning architecture and its EDP, but also area utilization and power utilization relative to the cell cap. These utilization metrics indicate which constraint is near saturation and therefore likely binding. Reporting only EDP would hide this mechanism; reporting only utilization would hide outcome quality. The combined metric set (best-cell EDP, selected tuple, throughput proxy from latency, and area/power utilization) directly supports the method question by showing when relaxing area helps, when relaxing power helps, and when one of those relaxations is largely irrelevant because the other constraint dominates. In short, Experiment 3 converts ``better under tighter budgets'' from a qualitative statement into a regime map that can be used to state conditional design rules for future Ethos-U55-class edge accelerators.
+
+%Describe in some detail how you set up the experiments to test the validity of your claims.
+
+\section{Results and Discussion}
+% TODO (#7 - comparative analysis isolation): Add a subsection that explicitly isolates causal effects by controlling one factor at a time (compute width, SRAM/scratchpad capacity, bandwidth preset, and workload resolution), then report matched-pair comparisons so performance deltas are attributable to the intended variable rather than cross-factor coupling.
+% TODO (#8 - probe methodology justification): Add a validation plot and discussion showing that probe-layer ranking tracks full-model ranking, and include an AI-vs-MACs interpretation for why T1/T7/T10/T16/T19 span the dominant bottleneck regimes.
+% TODO (#9 - PE utilization): Add measured/derived PE utilization across key configurations and layers, then connect utilization changes to bandwidth preset and memory-capacity effects to explain sustained-vs-peak throughput gaps.
+% TODO (#11 - memory cliff hypothesis): Add evidence for the memory-cliff transition (working-set no longer fitting in on-chip storage), identify the affected layers, and show the corresponding jump in upper-memory traffic, latency, and EDP.
+% TODO (#12 - design rules): Add explicit design rules distilled from Exp 1-3 (e.g., bandwidth-first vs MAC-first regimes, SRAM/MAC tradeoff thresholds, and budget-cell-specific recommendations), each tied to concrete figures/tables.
+% TODO (highest-priority additions order): Implement in this order for strongest narrative coherence: #8 (probe validity) -> #11 (memory cliff evidence) -> #9 (utilization mechanism) -> #12 (final prescriptive rules).
+Present your results, analysis, and exploration. This is a big portion of your grade, so here are some tips on organization, what to include, and the expected depth of analysis:
+\begin{itemize}
+    \item Start by summarizing your results, observations, and conclusions at a high-level.
+    \item If it makes sense, organize results into subsections.
+    \item For each result (usually in the form of plots or tables):
+    \begin{itemize}
+        \item introduce the results (\emph{e.g.}, ``Fig. 1 shows the energy consumption of our design over a range of sparsity values.");
+        \item point out important features for the readers to observe (\emph{e.g.}, ``note that energy consumption decreases as sparsity increases; however, the decrease flattens becomes less pronounced for higher sparsity.");
+        \item analyze the results (\emph{e.g.}, ``as sparsity increases, the energy savings from gating and skipping increases; however, the design of the accelerator, specifically this and that, prevents it from leveraging sparsity higher than 0.99. This fact is evident in Fig. 2, which shows the energy breakdown per-component for sparsity value 0.9 and 0.99. Note that ...");
+        \item summarize your insights (\emph{e.g.}, ``this result shows that: (1) leveraging sparsity can lead to significant energy savings, but (2) the design of an accelerator should be tailored to the specific range of sparsity of the applications.")
+    \end{itemize}
+\end{itemize}
+
+\clearpage
+NOTE: You must include the ``LLM Usage" and ``References" sections (see below), but they will \emph{not} count towards your page limit.
+
+\section{LLM Usage}
+Please include short answers to the following questions.
+
+\begin{itemize}
+    \item How did you use the LLM? 
+    \item For which parts of the project was an LLM most helpful?
+    \item For which parts of the project was an LLM \textit{not} helpful?
+\end{itemize}
+
+\begin{thebibliography}{00}
+
+\bibitem{b1}
+Y.-H. Chen, J. Emer, and V. Sze, ``Eyeriss: A Spatial Architecture for Energy-Efficient Dataflow for Convolutional Neural Networks,'' in \emph{Proc. IEEE/ACM Int. Symp. Computer Architecture (ISCA)}, 2016, pp. 367--379.
+
+\bibitem{b2}
+M. Horowitz, ``Computing's Energy Problem (and What We Can Do About It),'' in \emph{IEEE Int. Solid-State Circuits Conf. (ISSCC) Digest of Technical Papers}, 2014, pp. 10--14.
+
+\bibitem{b3}
+N. P. Jouppi \emph{et al.}, ``In-Datacenter Performance Analysis of a Tensor Processing Unit,'' in \emph{Proc. IEEE/ACM Int. Symp. Computer Architecture (ISCA)}, 2017, pp. 1--12.
+
+\bibitem{b4}
+V. Sze, Y.-H. Chen, T.-J. Yang, and J. Emer, ``Efficient Processing of Deep Neural Networks: A Tutorial and Survey,'' \emph{Proc. IEEE}, vol. 105, no. 12, pp. 2295--2329, Dec. 2017.
+
+\bibitem{b5}
+A. Kwon, H. Youn, and T. Krishna, ``ConfuciuX: Autonomous Hardware Resource Assignment for DNN Accelerators Using Reinforcement Learning,'' in \emph{Proc. IEEE/ACM Int. Symp. Microarchitecture (MICRO)}, 2020.
+
+\bibitem{b6}
+Y. Lin \emph{et al.}, ``SECDA: Segmented and Efficient Co-Design for FPGA-Based DNN Accelerators,'' in \emph{Proc. ACM/IEEE Design Automation Conf. (DAC)}, 2022.
+
+\bibitem{b7}
+Arm Ltd., ``Accelerating Machine Learning Compute for the IoT and Embedded Market,'' White Paper, 2020. [Online]. Available: \url{https://www.arm.com/-/media/files/pdf/ethos/arm_accelerating_ml_compute_for_embedded_market_white_paper1.pdf}
+
+\bibitem{b8}
+Arm Ltd., ``Arm Ethos-U55 NPU Technical Overview,'' 2020. [Online]. Available: \url{https://developer.arm.com/documentation/101886/r2p0}
+
+\bibitem{b9}
+Arm Ltd., ``Arm Ethos-U NPU Hardware Architecture,'' [Online]. Available: \url{https://developer.arm.com/documentation/109267/0103/Arm-Ethos-U-NPU/Ethos-U-hardware-architecture}
+
+\bibitem{b10}
+Ultralytics, ``YOLO-World Documentation,'' [Online]. Available: \url{https://docs.ultralytics.com/models/yolo-world/}
+
+\end{thebibliography}
+
+\end{document}
