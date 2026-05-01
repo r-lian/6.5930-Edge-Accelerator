@@ -151,23 +151,64 @@ def plot_exp1(exp1_path: Path, out_dir: Path) -> None:
         if m in non_best:
             c = non_best[m]
             preset = _short(c["system_preset"])
-            ax.text(i + w / 2, non_vals[i] + 0.02,
-                    f"{c['sram_kb']}KB / {c['scratch_kb']}KB / {preset}",
-                    ha="center", va="bottom", fontsize=7, color=OCEAN[0], rotation=0)
+            ax.annotate(f"{c['sram_kb']}KB sram\n{c['scratch_kb']}KB scratch\n{preset}",
+                        xy=(i + w / 2, non_vals[i]),
+                        xytext=(0, 6), textcoords="offset points",
+                        ha="center", va="bottom", fontsize=8, color=OCEAN[0])
 
-    best_overall = min(min(sku_best.values()), min(non_best.values()))
+    best_overall = min(c["total_edp"] * 1e3 for c in list(sku_best.values()) + list(non_best.values()))
     ax.axhline(best_overall, linestyle="--", color=OCEAN[0], linewidth=1.2,
                label=f"Best overall = {best_overall:.2f} x1e-3 J*s")
 
     ax.set_xticks(x)
     ax.set_xticklabels([f"{m} MACs" for m in macs_all])
     ax.set_ylabel("Best total EDP (x1e-3 J*s)")
-    ax.set_ylim(bottom=4.0)
+    top = max(max(sku_vals), max(non_vals)) + 1.4
+    ax.set_ylim(bottom=4.0, top=top)
     ax.set_title("Exp 1: SKU-Constrained vs Lifted Design Space (lower is better)")
     ax.grid(axis="y", alpha=0.3)
     ax.legend(loc="upper right")
     fig.tight_layout()
     fig.savefig(out_dir / "exp1_sku_vs_lifted.png", dpi=180)
+    plt.close(fig)
+
+    # Figure 5: parameter-influence subplots — average EDP per fixed value
+    from collections import defaultdict
+
+    params = [
+        ("num_macs", "MAC count", lambda v: f"{v}"),
+        ("sram_kb", "SRAM (KB)", lambda v: f"{v}"),
+        ("scratch_kb", "Scratchpad (KB)", lambda v: f"{v}"),
+        ("system_preset", "System preset", _short),
+    ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+    for ax, (key, title, fmt) in zip(axes.flat, params):
+        groups: dict = defaultdict(list)
+        for c in cfgs:
+            groups[c[key]].append(c["total_edp"] * 1e3)
+        keys_sorted = sorted(groups.keys(), key=lambda v: (isinstance(v, str), v))
+        means = [float(np.mean(groups[k])) for k in keys_sorted]
+        stds = [float(np.std(groups[k], ddof=1)) if len(groups[k]) > 1 else 0.0 for k in keys_sorted]
+        labels_x = [fmt(k) for k in keys_sorted]
+        colors = [OCEAN[i % len(OCEAN)] for i in range(len(keys_sorted))]
+
+        bars = ax.bar(labels_x, means, yerr=stds, color=colors, edgecolor="black",
+                      linewidth=0.4, capsize=4,
+                      error_kw={"ecolor": "black", "elinewidth": 1.0})
+        for b, m, s, vals in zip(bars, means, stds, [groups[k] for k in keys_sorted]):
+            ax.text(b.get_x() + b.get_width() / 2, m + s,
+                    f"{m:.2f}\n(n={len(vals)})", ha="center", va="bottom", fontsize=8)
+        lo = min(m - s for m, s in zip(means, stds)) - 0.3
+        hi = max(m + s for m, s in zip(means, stds)) + 0.8
+        ax.set_ylim(bottom=max(0, lo), top=hi)
+        ax.set_title(f"Avg EDP vs {title}")
+        ax.set_ylabel("Avg EDP (x1e-3 J*s)")
+        ax.grid(axis="y", alpha=0.3)
+
+    fig.suptitle("Exp 1: Parameter Influence on Total EDP (averaged over other params)")
+    fig.tight_layout()
+    fig.savefig(out_dir / "exp1_param_influence.png", dpi=180)
     plt.close(fig)
 
 
