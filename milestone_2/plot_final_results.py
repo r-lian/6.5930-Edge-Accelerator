@@ -130,12 +130,16 @@ def plot_exp2(exp2_path: Path, out_dir: Path) -> None:
     d = json.loads(exp2_path.read_text())["by_hw"]
     res = [640, 448, 320]
     res_str = [str(r) for r in res]
+    linestyles = ["-", "--", ":", "-.", (0, (3, 1, 1, 1))]
+    line_alpha = 0.7
 
     # Figure 1: raw EDP/MAC vs resolution
     fig, ax = plt.subplots(figsize=(9, 6))
     for i, (hw_name, hw) in enumerate(d.items()):
         y = [hw["by_resolution"][r]["edp_per_mac"] for r in res_str]
-        ax.plot(res, y, marker="o", linewidth=2, label=hw_name, color=OCEAN[i % len(OCEAN)])
+        ax.plot(res, y, marker="o", linewidth=2, label=hw_name,
+                color=OCEAN[i % len(OCEAN)], linestyle=linestyles[i % len(linestyles)],
+                alpha=line_alpha)
     ax.invert_xaxis()
     ax.set_xlabel("Input Resolution")
     ax.set_ylabel("EDP per MAC")
@@ -151,7 +155,9 @@ def plot_exp2(exp2_path: Path, out_dir: Path) -> None:
     for i, (hw_name, hw) in enumerate(d.items()):
         base = hw["by_resolution"]["640"]["edp_per_mac"]
         y = [hw["by_resolution"][r]["edp_per_mac"] / base for r in res_str]
-        ax.plot(res, y, marker="o", linewidth=2, label=hw_name, color=OCEAN[i % len(OCEAN)])
+        ax.plot(res, y, marker="o", linewidth=2, label=hw_name,
+                color=OCEAN[i % len(OCEAN)], linestyle=linestyles[i % len(linestyles)],
+                alpha=line_alpha)
     ax.axhline(1.0, linestyle="--", color="gray", linewidth=1)
     ax.invert_xaxis()
     ax.set_xlabel("Input Resolution")
@@ -171,7 +177,8 @@ def plot_exp2(exp2_path: Path, out_dir: Path) -> None:
         ids = sorted(set(l640) & set(l320))
         speedup = [l640[j]["latency_s"] / l320[j]["latency_s"] for j in ids]
         ax.plot([f"T{j}" for j in ids], speedup, marker="o", linewidth=2,
-                label=hw_name, color=OCEAN[i % len(OCEAN)])
+                label=hw_name, color=OCEAN[i % len(OCEAN)],
+                linestyle=linestyles[i % len(linestyles)], alpha=line_alpha)
     ax.axhline(1.0, linestyle="--", color="gray", linewidth=1)
     ax.set_ylabel("Latency speedup (640/320)")
     ax.set_title("Exp 2: Per-layer Latency Speedup from 320px")
