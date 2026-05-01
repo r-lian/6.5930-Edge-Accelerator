@@ -31,6 +31,10 @@ def _short(label: str) -> str:
     return label.replace("high_end_embedded", "high").replace("deep_embedded", "deep")
 
 
+# Ocean palette (deep -> shallow)
+OCEAN = ["#0B3954", "#1565C0", "#1E88A8", "#4FB3BF", "#87CEEB", "#B8E0E8"]
+
+
 def plot_exp1(exp1_path: Path, out_dir: Path) -> None:
     d = json.loads(exp1_path.read_text())
     cfgs = d["configs"]
@@ -44,26 +48,58 @@ def plot_exp1(exp1_path: Path, out_dir: Path) -> None:
 
     # Figure 1: best configs by EDP
     fig, ax = plt.subplots(figsize=(11, 7))
-    ax.barh(labels[::-1], edp_ms[::-1], color="#4C78A8")
+    ax.barh(labels[::-1], edp_ms[::-1], color=OCEAN[1])
+    best_edp = float(edp_ms.min())
+    ax.axvline(best_edp, linestyle="--", color=OCEAN[0], linewidth=1.5,
+               label=f"Best EDP = {best_edp:.2f} x1e-3 J*s")
+    ax.set_xlim(left=4.0)
     ax.set_xlabel("EDP (x1e-3 J*s)")
     ax.set_title("Exp 1: Top Configurations by EDP (lower is better)")
     ax.grid(axis="x", alpha=0.3)
+    ax.legend(loc="lower right")
     fig.tight_layout()
     fig.savefig(out_dir / "exp1_top_edp_bar.png", dpi=180)
     plt.close(fig)
 
-    # Figure 2: area vs EDP colored by power
+    # Figure 2: area vs EDP, marker = num_macs, color = power bin
+    macs = np.array([c["num_macs"] for c in top])
+    marker_map = {32: "o", 64: "s", 128: "^", 192: "D", 256: "v", 512: "P", 1024: "X"}
+    p_min, p_max = float(pwr.min()), float(pwr.max())
+    # Three uniform-width power bins across observed range
+    edges = np.linspace(p_min, p_max, 4)
+    bin_idx = np.clip(np.digitize(pwr, edges[1:-1]), 0, 2)
+    bin_colors = ["#3b528b", "#21918c", "#fde725"]  # viridis-like
+    bin_labels = [
+        f"{edges[0]:.0f}-{edges[1]:.0f} mW",
+        f"{edges[1]:.0f}-{edges[2]:.0f} mW",
+        f"{edges[2]:.0f}-{edges[3]:.0f} mW",
+    ]
+
     fig, ax = plt.subplots(figsize=(8, 6))
-    sc = ax.scatter(area, edp_ms, c=pwr, cmap="viridis", s=90, edgecolor="black", linewidth=0.4)
-    for c in top:
-        ax.annotate(f"{c['num_macs']}M", (c["area_mm2"], c["total_edp"] * 1e3), fontsize=7, xytext=(3, 3),
-                    textcoords="offset points")
+    seen_macs, seen_bins = set(), set()
+    for a, e, m, b in zip(area, edp_ms, macs, bin_idx):
+        ax.scatter(a, e, marker=marker_map.get(m, "o"), c=bin_colors[b],
+                   s=110, edgecolor="black", linewidth=0.5)
+        seen_macs.add(int(m))
+        seen_bins.add(int(b))
     ax.set_xlabel("Area (mm^2)")
     ax.set_ylabel("EDP (x1e-3 J*s)")
-    ax.set_title("Exp 1: Area-EDP Tradeoff (color = avg power)")
+    ax.set_title("Exp 1: Area-EDP Tradeoff")
     ax.grid(alpha=0.25)
-    cbar = fig.colorbar(sc, ax=ax)
-    cbar.set_label("Avg Power (mW)")
+
+    mac_handles = [plt.Line2D([0], [0], marker=marker_map.get(m, "o"), color="w",
+                              markerfacecolor="lightgray", markeredgecolor="black",
+                              markersize=10, label=f"{m} MACs")
+                   for m in sorted(seen_macs)]
+    pwr_handles = [plt.Line2D([0], [0], marker="o", color="w",
+                              markerfacecolor=bin_colors[b], markeredgecolor="black",
+                              markersize=10, label=bin_labels[b])
+                   for b in sorted(seen_bins)]
+    leg1 = ax.legend(handles=mac_handles, title="MAC count", loc="upper right", fontsize=8)
+    ax.add_artist(leg1)
+    ax.legend(handles=pwr_handles, title="Avg Power", loc="upper right",
+              bbox_to_anchor=(1.0, 0.65), fontsize=8)
+
     fig.tight_layout()
     fig.savefig(out_dir / "exp1_area_edp_power_scatter.png", dpi=180)
     plt.close(fig)
@@ -78,7 +114,7 @@ def plot_exp1(exp1_path: Path, out_dir: Path) -> None:
     for i, c in enumerate(top5):
         layer_map = {l["layer_idx"]: l["edp"] * 1e3 for l in c["layers"]}
         y = [layer_map.get(lid, 0.0) for lid in layer_ids]
-        ax.bar(x + (i - 2) * w, y, width=w, label=_short(c["label"]))
+        ax.bar(x + (i - 2) * w, y, width=w, label=_short(c["label"]), color=OCEAN[i])
     ax.set_xticks(x)
     ax.set_xticklabels([f"T{lid}" for lid in layer_ids])
     ax.set_ylabel("Layer EDP (x1e-3 J*s)")
@@ -97,9 +133,9 @@ def plot_exp2(exp2_path: Path, out_dir: Path) -> None:
 
     # Figure 1: raw EDP/MAC vs resolution
     fig, ax = plt.subplots(figsize=(9, 6))
-    for hw_name, hw in d.items():
+    for i, (hw_name, hw) in enumerate(d.items()):
         y = [hw["by_resolution"][r]["edp_per_mac"] for r in res_str]
-        ax.plot(res, y, marker="o", linewidth=2, label=hw_name)
+        ax.plot(res, y, marker="o", linewidth=2, label=hw_name, color=OCEAN[i % len(OCEAN)])
     ax.invert_xaxis()
     ax.set_xlabel("Input Resolution")
     ax.set_ylabel("EDP per MAC")
@@ -112,10 +148,10 @@ def plot_exp2(exp2_path: Path, out_dir: Path) -> None:
 
     # Figure 2: normalized vs 640
     fig, ax = plt.subplots(figsize=(9, 6))
-    for hw_name, hw in d.items():
+    for i, (hw_name, hw) in enumerate(d.items()):
         base = hw["by_resolution"]["640"]["edp_per_mac"]
         y = [hw["by_resolution"][r]["edp_per_mac"] / base for r in res_str]
-        ax.plot(res, y, marker="o", linewidth=2, label=hw_name)
+        ax.plot(res, y, marker="o", linewidth=2, label=hw_name, color=OCEAN[i % len(OCEAN)])
     ax.axhline(1.0, linestyle="--", color="gray", linewidth=1)
     ax.invert_xaxis()
     ax.set_xlabel("Input Resolution")
@@ -129,12 +165,13 @@ def plot_exp2(exp2_path: Path, out_dir: Path) -> None:
 
     # Figure 3: per-layer latency speedup
     fig, ax = plt.subplots(figsize=(10, 6))
-    for hw_name, hw in d.items():
+    for i, (hw_name, hw) in enumerate(d.items()):
         l640 = {l["layer_idx"]: l for l in hw["by_resolution"]["640"]["layers"]}
         l320 = {l["layer_idx"]: l for l in hw["by_resolution"]["320"]["layers"]}
         ids = sorted(set(l640) & set(l320))
-        speedup = [l640[i]["latency_s"] / l320[i]["latency_s"] for i in ids]
-        ax.plot([f"T{i}" for i in ids], speedup, marker="o", linewidth=2, label=hw_name)
+        speedup = [l640[j]["latency_s"] / l320[j]["latency_s"] for j in ids]
+        ax.plot([f"T{j}" for j in ids], speedup, marker="o", linewidth=2,
+                label=hw_name, color=OCEAN[i % len(OCEAN)])
     ax.axhline(1.0, linestyle="--", color="gray", linewidth=1)
     ax.set_ylabel("Latency speedup (640/320)")
     ax.set_title("Exp 2: Per-layer Latency Speedup from 320px")
@@ -195,18 +232,34 @@ def plot_exp3(exp3_path: Path, out_dir: Path) -> None:
         au.append(cell["best"]["area_utilization"])
         pu.append(cell["best"]["power_utilization"])
 
+    # Bin cells by power cap: high-power (500 mW) vs low-power (50/100 mW)
+    def _is_high(k: str) -> bool:
+        return k.endswith("_500")
+
+    high_area, high_pwr = OCEAN[0], OCEAN[1]   # deep navy / ocean blue
+    low_area, low_pwr = OCEAN[2], OCEAN[3]     # teal / aqua
+    area_colors = [high_area if _is_high(k) else low_area for k in keys]
+    pwr_colors = [high_pwr if _is_high(k) else low_pwr for k in keys]
+
     x = np.arange(len(keys))
     w = 0.38
     fig, ax = plt.subplots(figsize=(11, 5))
-    ax.bar(x - w / 2, au, width=w, label="Area utilization")
-    ax.bar(x + w / 2, pu, width=w, label="Power utilization")
+    ax.bar(x - w / 2, au, width=w, color=area_colors)
+    ax.bar(x + w / 2, pu, width=w, color=pwr_colors)
     ax.axhline(1.0, linestyle="--", color="gray", linewidth=1)
     ax.set_xticks(x)
     ax.set_xticklabels(keys, rotation=45, ha="right")
     ax.set_ylabel("Utilization (fraction of cap)")
     ax.set_title("Exp 3: Constraint Utilization by Budget Cell")
     ax.grid(axis="y", alpha=0.3)
-    ax.legend()
+
+    legend_handles = [
+        plt.Rectangle((0, 0), 1, 1, color=high_area, label="Area util (500 mW cap)"),
+        plt.Rectangle((0, 0), 1, 1, color=high_pwr, label="Power util (500 mW cap)"),
+        plt.Rectangle((0, 0), 1, 1, color=low_area, label="Area util (50/100 mW cap)"),
+        plt.Rectangle((0, 0), 1, 1, color=low_pwr, label="Power util (50/100 mW cap)"),
+    ]
+    ax.legend(handles=legend_handles, fontsize=8, loc="upper left")
     fig.tight_layout()
     fig.savefig(out_dir / "exp3_constraint_utilization.png", dpi=180)
     plt.close(fig)
