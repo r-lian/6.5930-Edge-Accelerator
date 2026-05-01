@@ -125,6 +125,51 @@ def plot_exp1(exp1_path: Path, out_dir: Path) -> None:
     fig.savefig(out_dir / "exp1_per_layer_top5.png", dpi=180)
     plt.close(fig)
 
+    # Figure 4: SKU vs lifted (non-SKU) best EDP per MAC count
+    sku_best: dict[int, dict] = {}
+    non_best: dict[int, dict] = {}
+    for c in cfgs:
+        bucket = sku_best if "SKU" in c["label"] else non_best
+        m = c["num_macs"]
+        prev = bucket.get(m)
+        if prev is None or c["total_edp"] < prev["total_edp"]:
+            bucket[m] = c
+
+    macs_all = sorted(set(sku_best) | set(non_best))
+    x = np.arange(len(macs_all))
+    w = 0.4
+    sku_vals = [sku_best[m]["total_edp"] * 1e3 if m in sku_best else np.nan for m in macs_all]
+    non_vals = [non_best[m]["total_edp"] * 1e3 if m in non_best else np.nan for m in macs_all]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(x - w / 2, sku_vals, width=w, color=OCEAN[0], label="SKU-constrained")
+    ax.bar(x + w / 2, non_vals, width=w, color=OCEAN[3], label="Lifted (non-SKU)")
+    for i, m in enumerate(macs_all):
+        if m not in sku_best:
+            ax.text(i - w / 2, 4.05, "no SKU", ha="center", va="bottom",
+                    fontsize=8, color="gray", rotation=90)
+        if m in non_best:
+            c = non_best[m]
+            preset = _short(c["system_preset"])
+            ax.text(i + w / 2, non_vals[i] + 0.02,
+                    f"{c['sram_kb']}KB / {c['scratch_kb']}KB / {preset}",
+                    ha="center", va="bottom", fontsize=7, color=OCEAN[0], rotation=0)
+
+    best_overall = min(min(sku_best.values()), min(non_best.values()))
+    ax.axhline(best_overall, linestyle="--", color=OCEAN[0], linewidth=1.2,
+               label=f"Best overall = {best_overall:.2f} x1e-3 J*s")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{m} MACs" for m in macs_all])
+    ax.set_ylabel("Best total EDP (x1e-3 J*s)")
+    ax.set_ylim(bottom=4.0)
+    ax.set_title("Exp 1: SKU-Constrained vs Lifted Design Space (lower is better)")
+    ax.grid(axis="y", alpha=0.3)
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    fig.savefig(out_dir / "exp1_sku_vs_lifted.png", dpi=180)
+    plt.close(fig)
+
 
 def plot_exp2(exp2_path: Path, out_dir: Path) -> None:
     d = json.loads(exp2_path.read_text())["by_hw"]
@@ -206,9 +251,16 @@ def plot_exp3(exp3_path: Path, out_dir: Path) -> None:
             M[i, j] = b["total_edp"] * 1e3
             labels[i][j] = f"{b['num_macs']}M\n{b['sram_kb']}KB"
 
-    # Figure 1: heatmap
+    # Figure 1: heatmap binned into low/high EDP
+    from matplotlib.colors import BoundaryNorm, ListedColormap
+
+    finite = M[np.isfinite(M)]
+    threshold = (finite.min() + finite.max()) / 2
+    cmap = ListedColormap([OCEAN[2], OCEAN[0]])  # teal (low), deep navy (high)
+    norm = BoundaryNorm([finite.min(), threshold, finite.max()], cmap.N)
+
     fig, ax = plt.subplots(figsize=(8, 5.5))
-    im = ax.imshow(M, aspect="auto")
+    im = ax.imshow(M, aspect="auto", cmap=cmap, norm=norm)
     ax.set_xticks(range(len(powers)))
     ax.set_xticklabels([str(p) for p in powers])
     ax.set_yticks(range(len(areas)))
@@ -222,8 +274,15 @@ def plot_exp3(exp3_path: Path, out_dir: Path) -> None:
                 ax.text(j, i, f"{M[i, j]:.2f}\n{labels[i][j]}", ha="center", va="center", fontsize=8, color="white")
             else:
                 ax.text(j, i, "N/A", ha="center", va="center", fontsize=8, color="white")
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label("EDP (x1e-3 J*s)")
+    cbar = fig.colorbar(im, ax=ax, ticks=[
+        (finite.min() + threshold) / 2,
+        (threshold + finite.max()) / 2,
+    ])
+    cbar.ax.set_yticklabels([
+        f"Low (<{threshold:.1f})",
+        f"High (>={threshold:.1f})",
+    ])
+    cbar.set_label("EDP bin (x1e-3 J*s)")
     fig.tight_layout()
     fig.savefig(out_dir / "exp3_budget_grid_heatmap.png", dpi=180)
     plt.close(fig)
