@@ -35,6 +35,18 @@ def _short(label: str) -> str:
 OCEAN = ["#0B3954", "#1565C0", "#1E88A8", "#4FB3BF", "#87CEEB", "#B8E0E8"]
 
 
+PAPER_FIGURES = {"exp1_sku_vs_lifted.png", "exp1_param_influence.png",
+                 "exp1_param_elasticity.png", "exp1_param_elasticity_per_step.png"}
+
+
+def _save(fig, out_dir: Path, name: str, dpi: int = 180) -> None:
+    fig.savefig(out_dir / name, dpi=dpi)
+    if name in PAPER_FIGURES:
+        paper_dir = out_dir / "paper"
+        paper_dir.mkdir(parents=True, exist_ok=True)
+        fig.savefig(paper_dir / name, dpi=dpi)
+
+
 def plot_exp1(exp1_path: Path, out_dir: Path) -> None:
     d = json.loads(exp1_path.read_text())
     cfgs = d["configs"]
@@ -126,35 +138,50 @@ def plot_exp1(exp1_path: Path, out_dir: Path) -> None:
     plt.close(fig)
 
     # Figure 4: SKU vs lifted (non-SKU) best EDP per MAC count
-    sku_best: dict[int, dict] = {}
-    non_best: dict[int, dict] = {}
+    sku_groups: dict[int, list[dict]] = {}
+    non_groups: dict[int, list[dict]] = {}
     for c in cfgs:
-        bucket = sku_best if "SKU" in c["label"] else non_best
-        m = c["num_macs"]
-        prev = bucket.get(m)
-        if prev is None or c["total_edp"] < prev["total_edp"]:
-            bucket[m] = c
+        bucket = sku_groups if "SKU" in c["label"] else non_groups
+        bucket.setdefault(c["num_macs"], []).append(c)
+
+    sku_best = {m: min(g, key=lambda c: c["total_edp"]) for m, g in sku_groups.items()}
+    non_best = {m: min(g, key=lambda c: c["total_edp"]) for m, g in non_groups.items()}
+
+    def _err(groups: dict[int, list[dict]], m: int, best_ms: float) -> float:
+        if m not in groups or len(groups[m]) <= 1:
+            return 0.0
+        return max(c["total_edp"] * 1e3 for c in groups[m]) - best_ms
 
     macs_all = sorted(set(sku_best) | set(non_best))
     x = np.arange(len(macs_all))
     w = 0.4
     sku_vals = [sku_best[m]["total_edp"] * 1e3 if m in sku_best else np.nan for m in macs_all]
     non_vals = [non_best[m]["total_edp"] * 1e3 if m in non_best else np.nan for m in macs_all]
+    sku_err_up = [_err(sku_groups, m, v) if m in sku_best else 0.0 for m, v in zip(macs_all, sku_vals)]
+    non_err_up = [_err(non_groups, m, v) if m in non_best else 0.0 for m, v in zip(macs_all, non_vals)]
+    sku_err = [np.zeros(len(macs_all)), np.array(sku_err_up)]
+    non_err = [np.zeros(len(macs_all)), np.array(non_err_up)]
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar(x - w / 2, sku_vals, width=w, color=OCEAN[0], label="SKU-constrained")
-    ax.bar(x + w / 2, non_vals, width=w, color=OCEAN[3], label="Lifted (non-SKU)")
+    ax.bar(x - w / 2, sku_vals, width=w, color=OCEAN[4], label="SKU-constrained")
+    ax.bar(x + w / 2, non_vals, width=w, color=OCEAN[1], label="Lifted (non-SKU)")
+    def _caption(c: dict) -> str:
+        return f"{c['sram_kb']}KB SRAM\n{c['scratch_kb']}KB Scratch\n{_short(c['system_preset'])}"
+
     for i, m in enumerate(macs_all):
-        if m not in sku_best:
+        if m in sku_best:
+            ax.annotate(_caption(sku_best[m]),
+                        xy=(i - w / 2, sku_vals[i]),
+                        xytext=(0, 4), textcoords="offset points",
+                        ha="center", va="bottom", fontsize=6, color=OCEAN[0])
+        else:
             ax.text(i - w / 2, 4.05, "no SKU", ha="center", va="bottom",
-                    fontsize=8, color="gray", rotation=90)
+                    fontsize=7, color="gray", rotation=90)
         if m in non_best:
-            c = non_best[m]
-            preset = _short(c["system_preset"])
-            ax.annotate(f"{c['sram_kb']}KB sram\n{c['scratch_kb']}KB scratch\n{preset}",
+            ax.annotate(_caption(non_best[m]),
                         xy=(i + w / 2, non_vals[i]),
-                        xytext=(0, 6), textcoords="offset points",
-                        ha="center", va="bottom", fontsize=8, color=OCEAN[0])
+                        xytext=(0, 4), textcoords="offset points",
+                        ha="center", va="bottom", fontsize=6, color=OCEAN[0])
 
     best_overall = min(c["total_edp"] * 1e3 for c in list(sku_best.values()) + list(non_best.values()))
     ax.axhline(best_overall, linestyle="--", color=OCEAN[0], linewidth=1.2,
@@ -169,7 +196,7 @@ def plot_exp1(exp1_path: Path, out_dir: Path) -> None:
     ax.grid(axis="y", alpha=0.3)
     ax.legend(loc="upper right")
     fig.tight_layout()
-    fig.savefig(out_dir / "exp1_sku_vs_lifted.png", dpi=180)
+    _save(fig, out_dir, "exp1_sku_vs_lifted.png")
     plt.close(fig)
 
     # Figure 5: parameter-influence subplots — average EDP per fixed value
@@ -208,7 +235,132 @@ def plot_exp1(exp1_path: Path, out_dir: Path) -> None:
 
     fig.suptitle("Exp 1: Parameter Influence on Total EDP (averaged over other params)")
     fig.tight_layout()
-    fig.savefig(out_dir / "exp1_param_influence.png", dpi=180)
+    _save(fig, out_dir, "exp1_param_influence.png")
+
+    # Figure 6: parameter ROI / elasticity
+    # For each param: take the cheapest setting (smallest area+power footprint)
+    # and the most expensive setting; compute mean EDP/area/power at each level.
+    # Elasticity = (-dEDP/EDP0) / (dCost/Cost0), so a ratio >1 means the param
+    # buys more EDP improvement than it costs in that resource.
+    # Bandwidth preset has zero true area cost (it only sets transfer rates,
+    # not memory sizes or MAC count), so its area-elasticity is undefined.
+    # We omit it here and report it separately as a "free on area" lever.
+    elastic_specs = [
+        ("num_macs", "MAC count", lambda v: v),
+        ("sram_kb", "SRAM KB", lambda v: v),
+        ("scratch_kb", "Scratchpad KB", lambda v: v),
+    ]
+
+    rows = []
+    for key, name, ordering in elastic_specs:
+        groups: dict = defaultdict(list)
+        for c in cfgs:
+            groups[c[key]].append(c)
+        levels = sorted(groups.keys(), key=ordering)
+        lo, hi = levels[0], levels[-1]
+        edp_lo = float(np.mean([c["total_edp"] * 1e3 for c in groups[lo]]))
+        edp_hi = float(np.mean([c["total_edp"] * 1e3 for c in groups[hi]]))
+        area_lo = float(np.mean([c["area_mm2"] for c in groups[lo]]))
+        area_hi = float(np.mean([c["area_mm2"] for c in groups[hi]]))
+        pwr_lo = float(np.mean([c["avg_power_mw"] for c in groups[lo]]))
+        pwr_hi = float(np.mean([c["avg_power_mw"] for c in groups[hi]]))
+        d_edp_rel = -(edp_hi - edp_lo) / edp_lo
+        d_area_rel = (area_hi - area_lo) / area_lo
+        d_pwr_rel = (pwr_hi - pwr_lo) / pwr_lo
+        e_area = d_edp_rel / d_area_rel if abs(d_area_rel) > 1e-6 else float("inf")
+        e_pwr = d_edp_rel / d_pwr_rel if abs(d_pwr_rel) > 1e-6 else float("inf")
+        rows.append({
+            "name": name, "lo": lo, "hi": hi,
+            "edp_lo": edp_lo, "edp_hi": edp_hi,
+            "d_edp_rel": d_edp_rel, "d_area_rel": d_area_rel, "d_pwr_rel": d_pwr_rel,
+            "e_area": e_area, "e_pwr": e_pwr,
+        })
+
+    rows.sort(key=lambda r: -(r["e_area"] if np.isfinite(r["e_area"]) else 0))
+
+    names = [r["name"] for r in rows]
+    e_area = [r["e_area"] for r in rows]
+    e_pwr = [r["e_pwr"] for r in rows]
+    cap = max(v for v in e_area + e_pwr if np.isfinite(v)) * 1.2
+    e_area_plot = [min(v, cap) if np.isfinite(v) else cap for v in e_area]
+    e_pwr_plot = [min(v, cap) if np.isfinite(v) else cap for v in e_pwr]
+
+    x = np.arange(len(names))
+    w = 0.38
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(x - w / 2, e_area_plot, width=w, color=OCEAN[1], label="EDP-vs-Area elasticity")
+    ax.bar(x + w / 2, e_pwr_plot, width=w, color=OCEAN[3], label="EDP-vs-Power elasticity")
+    ax.axhline(1.0, linestyle="--", color="gray", linewidth=1)
+    for i, (ea, ep, r) in enumerate(zip(e_area, e_pwr, rows)):
+        for off, val in [(-w / 2, ea), (w / 2, ep)]:
+            label = "∞" if not np.isfinite(val) else f"{val:.2f}"
+            y = e_area_plot[i] if off < 0 else e_pwr_plot[i]
+            ax.text(i + off, y + cap * 0.02, label, ha="center", va="bottom", fontsize=9)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{r['name']}\n({r['lo']} → {r['hi']})" for r in rows], fontsize=9)
+    ax.set_ylabel("Elasticity = (−ΔEDP/EDP₀) / (ΔCost/Cost₀)")
+    ax.set_title("Exp 1: Parameter ROI — EDP improvement per unit area/power cost")
+    ax.set_ylim(top=cap * 1.15)
+    ax.grid(axis="y", alpha=0.3)
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    _save(fig, out_dir, "exp1_param_elasticity.png")
+    plt.close(fig)
+
+    # Figure 7: per-step elasticity for each scalar parameter
+    step_specs = [
+        ("num_macs", "MAC count"),
+        ("sram_kb", "SRAM (KB)"),
+        ("scratch_kb", "Scratchpad (KB)"),
+    ]
+
+    def _means(group: list[dict]) -> tuple[float, float, float]:
+        return (
+            float(np.mean([c["total_edp"] * 1e3 for c in group])),
+            float(np.mean([c["area_mm2"] for c in group])),
+            float(np.mean([c["avg_power_mw"] for c in group])),
+        )
+
+    fig, axes = plt.subplots(1, 3, figsize=(14, 5), sharey=True)
+    for ax, (key, name) in zip(axes, step_specs):
+        groups: dict = defaultdict(list)
+        for c in cfgs:
+            groups[c[key]].append(c)
+        levels = sorted(groups.keys())
+        steps_x: list[str] = []
+        e_area_step: list[float] = []
+        e_pwr_step: list[float] = []
+        for lo, hi in zip(levels, levels[1:]):
+            e0, a0, p0 = _means(groups[lo])
+            e1, a1, p1 = _means(groups[hi])
+            d_edp = -(e1 - e0) / e0
+            d_a = (a1 - a0) / a0
+            d_p = (p1 - p0) / p0
+            e_area_step.append(d_edp / d_a if abs(d_a) > 1e-6 else float("nan"))
+            e_pwr_step.append(d_edp / d_p if abs(d_p) > 1e-6 else float("nan"))
+            steps_x.append(f"{lo}\n→ {hi}")
+
+        x = np.arange(len(steps_x))
+        w = 0.38
+        ax.bar(x - w / 2, e_area_step, width=w, color=OCEAN[1], label="vs Area")
+        ax.bar(x + w / 2, e_pwr_step, width=w, color=OCEAN[3], label="vs Power")
+        ax.axhline(1.0, linestyle="--", color="gray", linewidth=1)
+        ax.axhline(0.0, color="black", linewidth=0.6)
+        for i, (ea, ep) in enumerate(zip(e_area_step, e_pwr_step)):
+            for off, val in [(-w / 2, ea), (w / 2, ep)]:
+                if np.isfinite(val):
+                    ax.text(i + off, val, f"{val:.2f}",
+                            ha="center", va="bottom" if val >= 0 else "top", fontsize=8)
+        ax.set_xticks(x)
+        ax.set_xticklabels(steps_x, fontsize=9)
+        ax.set_title(name)
+        ax.grid(axis="y", alpha=0.3)
+    axes[0].set_ylabel("Per-step elasticity  (−ΔEDP/EDP) / (ΔCost/Cost)")
+    axes[-1].legend(loc="upper right")
+    fig.suptitle("Exp 1: Per-step Elasticity (>1 = super-linear EDP return per unit cost)")
+    fig.tight_layout()
+    _save(fig, out_dir, "exp1_param_elasticity_per_step.png")
+    plt.close(fig)
     plt.close(fig)
 
 
