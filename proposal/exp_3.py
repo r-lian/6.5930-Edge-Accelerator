@@ -7,7 +7,9 @@ Question (proposal):
 
 Method:
     Reuse Exp 1's mapping data — no new mapper calls. For each cell of a
-    3×3 grid {area ≤ 0.10 / 0.38 / 0.80 mm²} × {power ≤ 50 / 100 / 500 mW},
+    3×3 grid {area ≤ 0.35 / 0.38 / 0.75 mm²} × {power ≤ 50 / 100 / 500 mW},
+    where the area tiers correspond to the SKU-128 area cap (admits 3 SKUs),
+    SKU-256 area cap (admits all 4 SKUs), and ~2× SKU-256 (unconstrained).
     pick the EDP-min config that satisfies both ceilings. Report the chosen
     arch tuple, achieved EDP, and area/power utilization per cell.
 
@@ -31,7 +33,11 @@ from milestone_2 import common  # noqa: E402
 from proposal.exp_1 import DESIGN_SPACE, SKU_MARKERS, WORKLOAD_PATHS, _format_label  # noqa: E402
 
 # 3 × 3 = 9 (area, power) cells.
-AREA_TIERS_MM2 = [0.10, 0.38, 0.80]
+# Area tiers anchored to Ethos-U55 SKU footprints (model-computed):
+#   0.35 mm² ≈ SKU-128 area cap (admits SKU-32, -64, -128)
+#   0.38 mm² ≈ SKU-256 area cap (admits all 4 SKUs)
+#   0.75 mm² ≈ 2× SKU-256 (relaxed, no SKU constraint binding)
+AREA_TIERS_MM2 = [0.35, 0.38, 0.75]
 POWER_TIERS_MW = [50, 100, 500]
 
 
@@ -52,7 +58,7 @@ def gather_results(workload_yaml: str) -> list[common.ArchResult]:
     configs = []
     for (nmacs, sram, scratch, preset), label in combined.items():
         area = common.compute_area_mm2(nmacs, sram, scratch)
-        if area > 0.80 * 1.01:
+        if area > 0.75 * 1.01:
             continue
         configs.append((nmacs, sram, scratch, preset, label))
 

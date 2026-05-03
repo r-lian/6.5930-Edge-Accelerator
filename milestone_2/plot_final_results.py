@@ -19,6 +19,14 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+plt.rcParams.update({
+    "axes.labelsize": 13,
+    "axes.titlesize": 13,
+    "xtick.labelsize": 11,
+    "ytick.labelsize": 11,
+    "legend.fontsize": 11,
+})
+
 
 def _latest(results_dir: Path, pattern: str) -> Path:
     files = sorted(results_dir.glob(pattern))
@@ -442,7 +450,8 @@ def plot_exp3(exp3_path: Path, out_dir: Path) -> None:
                 continue
             b = cell["best"]
             M[i, j] = b["total_edp"] * 1e3
-            labels[i][j] = f"{b['num_macs']}M\n{b['sram_kb']}KB"
+            labels[i][j] = (f"{b['num_macs']}M / {b['sram_kb']}KB\n"
+                            f"{b['scratch_kb']}KB / {_short(b['system_preset'])}")
 
     # Figure 1: heatmap binned into low/high EDP
     from matplotlib.colors import BoundaryNorm, ListedColormap
@@ -464,7 +473,7 @@ def plot_exp3(exp3_path: Path, out_dir: Path) -> None:
     for i in range(len(areas)):
         for j in range(len(powers)):
             if np.isfinite(M[i, j]):
-                ax.text(j, i, f"{M[i, j]:.2f}\n{labels[i][j]}", ha="center", va="center", fontsize=8, color="white")
+                ax.text(j, i, f"EDP = {M[i, j]:.2f}\n{labels[i][j]}", ha="center", va="center", fontsize=8, color="white")
             else:
                 ax.text(j, i, "N/A", ha="center", va="center", fontsize=8, color="white")
     cbar = fig.colorbar(im, ax=ax, ticks=[
@@ -521,6 +530,57 @@ def plot_exp3(exp3_path: Path, out_dir: Path) -> None:
     ax.legend(handles=legend_handles, fontsize=8, loc="upper left")
     fig.tight_layout()
     fig.savefig(out_dir / "exp3_constraint_utilization.png", dpi=180)
+    plt.close(fig)
+
+    # Figure 3: marginal-relaxation elasticity heatmaps. The cap tiers don't
+    # step uniformly (area: +8.6% then +97%; power: +100% then +400%), so we
+    # normalize by % cap change: ε = (% EDP saved) / (% cap relaxed). Larger
+    # ε = the constraint was more binding per unit of relaxation.
+    eps_area = np.full((len(areas), len(powers)), np.nan)
+    eps_pwr = np.full((len(areas), len(powers)), np.nan)
+    for i in range(len(areas)):
+        for j in range(len(powers)):
+            here = M[i, j]
+            if not np.isfinite(here):
+                continue
+            if i + 1 < len(areas) and np.isfinite(M[i + 1, j]):
+                edp_pct = (here - M[i + 1, j]) / here
+                cap_pct = (areas[i + 1] - areas[i]) / areas[i]
+                eps_area[i, j] = edp_pct / cap_pct if cap_pct > 0 else np.nan
+            if j + 1 < len(powers) and np.isfinite(M[i, j + 1]):
+                edp_pct = (here - M[i, j + 1]) / here
+                cap_pct = (powers[j + 1] - powers[j]) / powers[j]
+                eps_pwr[i, j] = edp_pct / cap_pct if cap_pct > 0 else np.nan
+
+    vmax = float(np.nanmax(np.concatenate([eps_area.flatten(), eps_pwr.flatten()])))
+    vmax = max(vmax, 0.1)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6.5), sharey=True)
+    for ax, mat, title in [
+        (axes[0], eps_area, "Relax AREA cap by one tier"),
+        (axes[1], eps_pwr, "Relax POWER cap by one tier"),
+    ]:
+        im = ax.imshow(mat, aspect="auto", cmap="Blues", vmin=0, vmax=vmax)
+        ax.set_xticks(range(len(powers)))
+        ax.set_xticklabels([str(p) for p in powers], fontsize=14)
+        ax.set_yticks(range(len(areas)))
+        ax.set_yticklabels([str(a) for a in areas], fontsize=14)
+        ax.set_xlabel("Power cap (mW)", fontsize=15)
+        ax.set_title(title, fontsize=16)
+        for i in range(len(areas)):
+            for j in range(len(powers)):
+                v = mat[i, j]
+                if np.isnan(v):
+                    ax.text(j, i, "—", ha="center", va="center", fontsize=18, color="gray")
+                else:
+                    color = "white" if v > vmax * 0.55 else "black"
+                    ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=18, color=color)
+    axes[0].set_ylabel("Area cap (mm²)", fontsize=15)
+    cbar = fig.colorbar(im, ax=axes, fraction=0.04, pad=0.02)
+    cbar.set_label("Elasticity ε = (% EDP saved) / (% cap relaxed)", fontsize=14)
+    cbar.ax.tick_params(labelsize=12)
+    fig.suptitle("Exp 3: Constraint Binding via Marginal Elasticity  (larger ε = more binding)", fontsize=16)
+    _save(fig, out_dir, "exp3_marginal_relaxation.png")
     plt.close(fig)
 
 
